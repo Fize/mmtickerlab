@@ -1,107 +1,13 @@
 [project]
-name = "chosestock-cli"
+name = "chosestock"
 version = "0.1.0"
-description = "ChoseStock CLI - AI驱动的股票分析命令行工具"
+description = "A-share trading assistant skills for Claude Code"
+readme = "README.md"
 requires-python = ">=3.10"
-authors = [{name = "choseStock Team", email = "team@chosestock.com"}]
 dependencies = [
-    # CLI框架
-    "typer>=0.12.0",
-    "rich>=13.0.0",
-    # 配置管理
-    "pydantic-settings>=2.0.0",
-    "pyyaml>=6.0.0",
-    "python-dotenv>=1.0.0",
-    # 数据处理和分析
-    "pandas==2.2.3",
-    "numpy==2.2.2",
-    "python-dateutil==2.9.0.post0",
-    "pytz==2024.2",
-    "tzdata==2025.1",
-    "tzlocal==5.3",
-    # 数据库
-    "SQLAlchemy==2.0.38",
-    # 网络请求
-    "requests==2.32.3",
-    "urllib3==2.3.0",
-    "websocket-client==1.8.0",
-    # HTML/XML解析
-    "beautifulsoup4==4.12.3",
-    "lxml==5.3.0",
-    "html5lib==1.1",
-    "bs4==0.0.2",
-    "soupsieve==2.6",
-    "webencodings==0.5.1",
-    # Excel处理
-    "openpyxl==3.1.5",
-    "xlrd==2.0.1",
-    "et_xmlfile==2.0.0",
-    # 中国股票数据
-    "akshare==1.17.26",
-    "tushare",
-    # MCP服务
-    "mcp>=1.0.0",
-
-    # TradingAgents依赖
-    "langgraph",
-    "langchain-openai",
-    "langchain-experimental",
-    "langchain-anthropic>=0.3.19",
-    "langchain-google-genai>=2.1.9",
-    "yfinance",
-    "stockstats",
-    "backtrader",
-    "chromadb>=1.0.20",
-    # 其他
-    "pydantic",
-    "jsonpath==0.82.2",
-    "tabulate==0.9.0",
-    "tqdm==4.67.1",
-    "typing_extensions==4.12.2",
-    "decorator==5.1.1",
-    "six==1.17.0",
-    "simplejson==3.20.1",
-    "certifi==2024.12.14",
-    "charset-normalizer==3.4.1",
-    "idna==3.10",
-    "click==8.1.8",
-    "mini-racer==0.12.4",
-    "langchain-core>=0.3.74",
-    "pytest>=8.4.1",
-    "pytest-asyncio>=1.1.0",
-    "scikit-learn>=1.7.1",
-    "flake8>=7.3.0",
-    "pylint>=3.3.8",
-    "mypy>=1.17.1",
-    "black>=25.1.0",
-    "isort>=6.0.1",
+    "akshare>=1.13.0",
+    "pandas>=2.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-]
-
-[project.scripts]
-chosestock = "cli.app:main"
-a-share-mcp = "dataflows_mcp.server.mcp_server:main"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["dataflows_mcp", "app", "cli"]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.1",
-    "pytest-cov",
-    "pytest-asyncio>=1.1.0",
-]
-
-[project.urls]
-Homepage = "https://github.com/choseStock"
-Repository = "https://github.com/choseStock/backend"
-Documentation = "https://github.com/choseStock/docs"
+[tool.uv]
+package = false

@@ -131,3 +131,7 @@ Thumbs.db
 # uv lock file (should be committed, but keeping here for awareness)
 # uv.lock
 specs
+
+# Runtime data directories (cache, watchlist, simulation state)
+/data/
+skills/*/data/
