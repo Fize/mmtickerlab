@@ -1,5 +1,5 @@
 [project]
-name = "chosestock"
+name = "mmtickerlab"
 version = "0.1.0"
 description = "A-share trading assistant skills for Claude Code"
 readme = "README.md"

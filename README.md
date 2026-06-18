@@ -1,6 +1,6 @@
-# ChoseStock — A-Share Trading Assistant Skills
+# mmtickerlab — A-Share Trading Assistant Skills
 
-ChoseStock is a collection of Claude Code skills for analyzing the Chinese A-share market and running paper trading simulations. All data is sourced via [akshare](https://github.com/akfamily/akshare).
+A collection of Claude Code skills for analyzing the Chinese A-share market and running paper trading simulations. All data is sourced via [akshare](https://github.com/akfamily/akshare).
 
 ## Project Structure
 

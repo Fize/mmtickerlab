@@ -1,4 +1,4 @@
-# AGENTS.md — ChoseStock (A-Share Trading Assistant)
+# AGENTS.md — mmtickerlab (A-Share Trading Assistant)
 
 ## Project nature
 
