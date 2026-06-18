@@ -46,6 +46,15 @@ Each skill has its own `cache_db.py` in `scripts/` that stores data in a skill-l
 - **Fees**: 0.025% commission (min ¥5) + 0.002% transfer fee both sides; 0.1% stamp tax on sell only
 - Reset with `sim-trade/scripts/reset.py` before first use
 
+## Plan & Review skill (plan-review)
+
+- **Purpose**: Standardized pre-market preparation, noon review, and evening review workflows + journal management
+- **Journal data**: `data/journal/YYYYMMDD.md` (one markdown file per day with 盘前计划/午间复盘/晚间复盘 sections)
+- **Script path**: `skills/plan-review/scripts/journal.py` (create/append/view/list journal entries)
+- **No external deps**: uses Python stdlib only
+- **Usage**: `skills/plan-review/.venv/bin/python skills/plan-review/scripts/journal.py create --plan "..."`
+
+This is the **process layer** that connects `market` (data) and `sim-trade` (execution) into a daily routine. See `skills/plan-review/SKILL.md` for the full workflow.
 ## East Money TLS blocking (market only)
 
 East Money APIs block Python's default `requests` TLS fingerprint. The market skill's `akshare_patch.py` routes East Money domain calls through `curl_cffi` with Chrome 120 impersonation. If a script hangs on East Money endpoints, verify `curl_cffi` is installed in the market venv.
