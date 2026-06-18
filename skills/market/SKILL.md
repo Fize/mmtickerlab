@@ -20,7 +20,7 @@ uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 
 ## Usage Guidelines
 
-- Run all scripts from the project root `/Users/xiaobaitu/github.com/choseStock` using the skill's local virtual environment python: `skills/market/.venv/bin/python`.
+- Run all scripts from the project root using the skill's local virtual environment python: `skills/market/.venv/bin/python`.
 - All scripts output plain text, markdown tables, or JSON. No `rich` terminal library is used, making it easy for you to parse.
 
 ## Script References
@@ -88,7 +88,7 @@ skills/market/.venv/bin/python skills/market/scripts/save_review.py --type eveni
 
 ## Recommended Workflow Scenarios
 
-For a step-by-step guideline of market scenarios (Pre-market, Noon, Evening, Stock Deep-dive), refer to [scenarios.md](file:///Users/xiaobaitu/github.com/choseStock/skills/market/references/scenarios.md).
+For a step-by-step guideline of market scenarios (Pre-market, Noon, Evening, Stock Deep-dive), refer to [scenarios.md](references/scenarios.md).
 
 ## Supplemental Data Sources (数据与新闻补充来源)
 

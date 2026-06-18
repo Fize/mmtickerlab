@@ -35,7 +35,7 @@ Each skill has its own `cache_db.py` in `scripts/` that stores data in a skill-l
 - **Root `data/`**: `watchlist.json` (editable list of stock codes to track), `stock_names.json` (global name lookup cache)
 - **Market data**: `skills/market/data/` (cache.db, saved reviews)
 - **Sim-Trade data**: `skills/sim-trade/data/simulation/` (portfolio.json, history.csv)
-- Working directory is `/Users/xiaobaitu/github.com/choseStock`.
+- Working directory is the project root (where this file lives).
 
 ## Simulation trading rules (sim-trade)
 

@@ -31,7 +31,7 @@ uv pip install --python skills/sim-trade/.venv -r skills/sim-trade/requirements.
 
 ## Usage Guidelines
 
-- Run all scripts from the project root `/Users/xiaobaitu/github.com/choseStock` using the skill's local virtual environment python: `skills/sim-trade/.venv/bin/python`.
+- Run all scripts from the project root using the skill's local virtual environment python: `skills/sim-trade/.venv/bin/python`.
 - All account holdings, portfolios, and histories are stored locally inside the skill folder under `skills/sim-trade/data/simulation/`.
 
 ## Script References
