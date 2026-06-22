@@ -30,7 +30,12 @@ def _is_eastmoney_url(url: str) -> bool:
 original_get = requests.get
 
 def _curl_get(url: str, params: dict = None, headers: dict = None, timeout: int = 30) -> requests.Response:
-    """Use curl_cffi to fetch from East Money, which blocks Python's requests TLS fingerprint."""
+    """Use curl_cffi to fetch from East Money, which blocks Python's requests TLS fingerprint.
+    
+    Retry logic included because East Money servers intermittently drop connections (curl error 52/56).
+    Impersonation is NOT used — recent tests show it causes consistent 'Connection closed abruptly'
+    errors, while plain curl_cffi plus retries reliably succeeds.
+    """
     from requests.structures import CaseInsensitiveDict
     from requests import Response as RequestsResponse
 
@@ -39,19 +44,36 @@ def _curl_get(url: str, params: dict = None, headers: dict = None, timeout: int 
     if not any(k.lower() == "user-agent" for k in headers):
         headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    # curl_cffi returns a different response type; we wrap it to look like requests.Response
-    raw = curl_requests.get(url, params=params, headers=headers, impersonate="chrome120", timeout=timeout)
-    raw.raise_for_status()
+    last_exception = None
+    max_retries = 5
+    base_delay = 1.0
+    random_delay_range = (0.5, 1.5)
 
-    # Build a minimal requests.Response-like object for compatibility
-    resp = RequestsResponse()
-    resp.status_code = raw.status_code
-    resp.headers = CaseInsensitiveDict(dict(raw.headers))
-    resp.url = raw.url
-    resp.encoding = raw.encoding
-    resp._content = raw.content
-    resp.raw = None
-    return resp
+    for attempt in range(max_retries):
+        try:
+            # No impersonation — it causes consistent connection drops with East Money
+            # while plain curl_cffi handles the TLS fingerprint just fine.
+            raw = curl_requests.get(url, params=params, headers=headers, timeout=timeout)
+            raw.raise_for_status()
+
+            # Build a minimal requests.Response-like object for compatibility
+            resp = RequestsResponse()
+            resp.status_code = raw.status_code
+            resp.headers = CaseInsensitiveDict(dict(raw.headers))
+            resp.url = raw.url
+            resp.encoding = raw.encoding
+            resp._content = raw.content
+            resp.raw = None
+            return resp
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                delay = base_delay * (2**attempt) + random.uniform(*random_delay_range)
+                print(f"[akshare_patch] _curl_get attempt {attempt+1}/{max_retries} failed for {url}: {type(e).__name__}: {str(e)[:80]}; retrying in {delay:.1f}s")
+                time.sleep(delay)
+
+    print(f"[akshare_patch] _curl_get exhausted {max_retries} attempts for {url}")
+    raise last_exception
 
 def my_patched_get(*args, **kwargs):
     url = args[0] if args else kwargs.get("url", "unknown")
