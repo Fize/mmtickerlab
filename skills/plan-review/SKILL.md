@@ -4,7 +4,7 @@ description: |
   Standardized pre-market preparation, noon review, and evening review workflows plus trading journal management.
   三段式交易操作系统：盘前准备→午间复盘→晚间复盘，配合交易日志工具记录每一天。
   触发词：盘前准备、午间复盘、晚间复盘、交易计划、复盘、写日志、交易日志、今日计划、纪律打分。
-  ——核心原则：脚本取数据，AI 做分析，交易者负责最终决策。
+  ——核心原则：模板定结构，prompt 定框架，AI 按需用 market 脚本取真实数据做分析，交易者负责最终决策。
 ---
 
 # Plan & Review Skill
@@ -13,17 +13,17 @@ description: |
 
 This skill provides the **process backbone** for the mmtickerlab project. It connects the `market` data skill and `sim-trade` execution skill into a disciplined daily workflow.
 
-**Architecture principle**: Scripts are **data faucets** — they fetch, aggregate, and structure raw market data. The AI is the **analyst** — it reads the data, applies reasoning, identifies patterns, and generates the final trading plan. This separation ensures analysis is contextual and adaptive, not hard-coded.
+**Architecture principle**: Templates define the structure, prompts define the analysis framework, and AI uses `market` skill scripts on-demand to fetch real data. This ensures analysis is grounded in actual market data, not fabricated.
 
 There are three daily checkpoints:
 
 | Checkpoint | Who fetches data | Who analyzes |
 |:---|:---|:---|
-| **Pre-Market** (盘前准备) | `pre_market.py` | AI synthesizes plan |
-| **Noon Review** (午间复盘) | `noon_review.py` | AI checks alignment |
-| **Evening Review** (晚间复盘) | `evening_review.py` | AI performs deep复盘 |
+| **Pre-Market** (盘前准备) | AI via `market` scripts | AI synthesizes plan |
+| **Noon Review** (午间复盘) | AI via `market` scripts | AI checks alignment |
+| **Evening Review** (晚间复盘) | AI via `market` scripts | AI performs deep复盘 |
 
-**The central artifact is the daily trading journal**, stored at `data/journal/YYYYMMDD.md`.
+**Output**: Reports are saved to `report/` in the project root. Filename format: `YYYYMMDD_盘前计划.md`, `YYYYMMDD_午间复盘.md`, `YYYYMMDD_晚间复盘.md`. If the user specifies an output location, use that instead.
 
 ---
 
@@ -36,70 +36,21 @@ uv pip install --python skills/plan-review/.venv -r skills/plan-review/requireme
 
 ---
 
-## Data Faucet Scripts (all in `skills/market/scripts/`)
+## Data Sources
 
-These scripts fetch and structure raw data. They do NOT make final trading decisions — that's the AI's job.
+Plan-review 不运行数据获取脚本。数据由 AI 通过 `market` skill 的查询脚本按需获取：
 
-### `pre_market.py` — 盘前数据聚合器
+| 数据需求 | market skill 脚本 | 用途 |
+|:---|:---|:---|
+| 全球指数 + A50 | `overview.py` | 宏观定调 |
+| 市场涨跌 + 涨停跌停 | `overview.py` / `limit_up.py` | 情绪判断 |
+| 概念/行业资金流向 | `fund_flow.py` | 题材筛选 |
+| 个股技术指标 | `stock_profile.py --mode technical` | 交易预案 |
+| 个股实时行情 | `stock_profile.py --mode realtime` | 午间对齐 |
+| 个股新闻 | `news.py` | 消息面补充 |
+| 龙虎榜* | — | 晚间复盘需要，需 AI 浏览外部数据源 |
 
-Fetches all pre-market data into structured output. Run first, then AI analyzes.
-
-```bash
-skills/market/.venv/bin/python skills/market/scripts/pre_market.py [--date YYYYMMDD]
-```
-
-**Data provided**:
-
-| Section | Data |
-|:---|:---|
-| A50期货 | 最新价 + 涨跌幅 |
-| 离岸人民币 | USD/CNY 买卖报价 |
-| 美股三大指数 | DJIA/SPX/NDX 收盘价 + 涨跌幅 |
-| 恒生指数 | 收盘价 + 涨跌幅 |
-| 宏观新闻 | 政策/经济相关新闻标题 + 摘要 |
-| 7大A股指数 | 收盘价 + 涨跌幅 |
-| 市场宽度 | 涨跌家数、涨停/跌停数、成交额 |
-| 涨停池 Top 15 | 代码/名称/连板/行业/换手率 |
-| 概念资金流向 Top 5 | 净流入/涨幅/领涨股 |
-| 行业资金流向 Top 5 | 净流入/涨幅/领涨股 |
-| 自选股技术指标 | K线 + MA/MACD/RSI/BOLL/KDJ（每只） |
-
-### `noon_review.py` — 午间数据聚合器
-
-```bash
-skills/market/.venv/bin/python skills/market/scripts/noon_review.py
-```
-
-**Data provided**:
-- 早盘实时三大指数
-- 涨跌分布 + 涨停/跌停/炸板率
-- 领涨题材 + 大单成交
-- 盘前计划标的实时报价（从 journal 解析）
-
-### `evening_review.py` — 晚间数据聚合器
-
-```bash
-skills/market/.venv/bin/python skills/market/scripts/evening_review.py [--date YYYYMMDD]
-```
-
-**Data provided**:
-- 全天市场总览（同 pre_market 模块二）
-- 主线题材资金流向
-- **龙虎榜**：机构买卖/游资动向/负反馈标的（`stock_lhb_detail_em` + `stock_lhb_ggtj_sina`）
-- 连板高度 + 阶梯完整性
-
----
-
-## Journal Script
-
-### `journal.py` (`skills/plan-review/scripts/journal.py`)
-
-| Command | Description |
-|:---|:---|
-| `create` | Create today's journal (reads plan from `--plan` or stdin) |
-| `append --section {noon,evening}` | Append a review section |
-| `view [--date YYYYMMDD]` | View a journal |
-| `list [--n N]` | List recent entries |
+> *龙虎榜数据在 16:30-17:00 后才发布，晚间复盘时通过财联社等网站获取。
 
 ---
 
@@ -107,135 +58,66 @@ skills/market/.venv/bin/python skills/market/scripts/evening_review.py [--date Y
 
 ### Phase 1: Pre-Market Preparation (盘前准备)
 
-**Goal**: Generate a complete, AI-analyzed trading plan before market opens.
-
-#### Step 1: Fetch Raw Data
-
-```bash
-skills/market/.venv/bin/python skills/market/scripts/pre_market.py > /tmp/pre_market_data.md
-```
-
-This produces a structured data dump. The AI reads it.
-
-#### Step 2: AI Analysis & Plan Synthesis
-
-The AI reads the data and performs the following analysis:
+**Goal**: 开盘前生成完整的交易计划。
 
 **模块一：宏观定调**
-- Read A50 + US indices + RMB + news
-- Judge: 今日高开/平开/低开概率？外资情绪偏多/偏空？有无重大政策催化剂？
-- Output: 1-2 句宏观定调 + 对仓位的影响
+AI 按需运行 `overview.py`（获取全球指数）+ `news.py`（宏观新闻），分析：
+- 今日高开/平开/低开概率？外资情绪偏多/偏空？
+- Output: 1-2 句宏观定调
 
 **模块二：情绪判断**
-- Read breadth data (涨跌比、涨停/跌停数、成交额)
-- Read 涨停池（连板分布、行业集中度）
-- Read 资金流向（概念/行业 Top 5）
-- Judge: 赚钱效应在哪里？亏钱效应在哪里？连板梯队是否健康？
+AI 按需运行 `overview.py`（涨跌分布）+ `limit_up.py`（涨停池）+ `fund_flow.py`（资金流向），分析：
+- 赚钱效应在哪里？连板梯队是否健康？
 - Output: 情绪定性 + 最强 1-2 条主线
 
 **模块三：题材筛选**
-- Cross-reference 资金流向 + 涨停集中行业 + 宏观新闻
-- Judge: 哪些题材有持续性？哪些是一日游？
-- Output: ≤3 个焦点题材，每个含：逻辑 + 龙头
+AI 交叉分析资金流向 + 涨停行业 + 宏观新闻：
+- 哪些题材有持续性？哪些是一日游？
+- Output: ≤3 个焦点题材
 
 **模块四：交易预案（核心）**
-- Read 自选股技术指标数据
-- For each stock, the AI judges:
-  - 当前处于什么技术位置？（趋势/震荡/超跌）
-  - 有哪些可识别的入场信号？信号的可靠性如何？
-  - 合理的入场价位、止损价位、仓位比例？
-- **If no clear setups exist, state "今日无符合条件的交易机会"** — this is a valid output.
+AI 按需运行 `stock_profile.py --mode technical` 获取自选股技术指标，分析：
+- 当前技术位置？入场信号？止损价位？
+- **If no clear setups, state "今日无符合条件的交易机会"**
 - Output: ≤3 个 If-Then 预案
 
 **模块五：仓位纪律**
-- Based on 模块一+二, AI judges market temperature
-- Determines position limit
-- Writes today's prohibited behaviors
+基于宏观和情绪，AI 判断仓位上限。
 
-#### Step 3: Save to Journal
+**输出**：将完整交易计划写入 `report/YYYYMMDD_盘前计划.md`（或用户指定的路径）。
 
-```bash
-# AI writes the final plan to a temp file, then:
-cat /tmp/final_plan.md | skills/plan-review/.venv/bin/python skills/plan-review/scripts/journal.py create
-```
-
-> ### ✅ Pre-Market Completion Criterion
-> Journal contains AI-generated plan with all 5 modules. **No plan = no trading.**
+> ✅ **Pre-Market Completion Criterion**: Journal 含完整 5 模块。**No plan = no trading.**
 
 ---
 
 ### Phase 2: Noon Review (午间复盘)
 
-**Goal**: Check if the morning is going according to plan.
+**Goal**: 检查上午走势是否符合计划。
 
-#### Step 1: Fetch Noon Data
+AI 按需运行 `overview.py`（午间指数）+ `stock_profile.py --mode realtime`（计划标的实时价）：
+1. 上午指数表现？成交量 vs 昨日？
+2. 对照计划检查每个标的：触发条件了吗？有异常走弱吗？
+3. 午间冲动检查
+4. 下午策略
 
-```bash
-skills/market/.venv/bin/python skills/market/scripts/noon_review.py > /tmp/noon_data.md
-```
-
-#### Step 2: AI Analysis
-
-1. **Read the market**: 上午指数表现？成交量 vs 昨日同期？领涨/领跌板块？
-2. **Check against plan**: Read today's journal. For each plan stock, check:
-   - Did trigger conditions fire?
-   - If not, are conditions still valid?
-   - Any stock showing unexpected weakness?
-3. **Self-examination check**: Any plan-external impulses?
-4. **Afternoon strategy**: Based on morning patterns, what's the afternoon play?
-
-#### Step 3: Save
-
-```bash
-cat /tmp/noon_final.md | skills/plan-review/.venv/bin/python skills/plan-review/scripts/journal.py append --section noon
-```
+**输出**：将复盘写入 `report/YYYYMMDD_午间复盘.md`（或用户指定的路径）。
 
 ---
 
 ### Phase 3: Evening Review (晚间复盘)
 
-**Goal**: Deep复盘 — market playback, self-scoring, and next-day preparation.
+**Goal**: 深度复盘——市场回放、自我打分、次日准备。
 
-#### Step 1: Fetch Evening Data
+AI 综合分析当日数据：
+1. **Market Narrative**: 今日主导故事，一句话
+2. **Theme Lifecycle**: 主导题材所处阶段（启动/发酵/高潮/分歧/退潮）
+3. **LHB Analysis**: 机构买卖/游资动向（通过财联社等外部数据源）
+4. **Candidate Pool**: 3-5 个次日候选，含技术理由 + 风险提示
+5. **Self-Scoring**: P&L 归因 + 纪律打分（0-100）+ 一条错误记录
 
-```bash
-skills/market/.venv/bin/python skills/market/scripts/evening_review.py > /tmp/evening_data.md
-```
+**输出**：将复盘写入 `report/YYYYMMDD_晚间复盘.md`（或用户指定的路径）。
 
-This provides: full-day breadth, theme flows, 龙虎榜 data, 连板高度.
-
-#### Step 2: AI Deep Analysis
-
-**① Market Narrative**: What was today's dominant story? One sentence.
-
-**② Theme Lifecycle**: The AI judges each leading theme's stage:
-- 启动期 / 发酵期 / 高潮 / 分歧 / 退潮
-- This is NOT a formula — the AI considers volume, breadth, news context, sector rotation patterns
-
-**③ LHB Analysis**: Read 龙虎榜 data and identify:
-- Which institutions are buying? What's the pattern?
-- Any stocks with asymmetric buy/sell ratios?
-- Any warning signals (机构集体出逃)?
-
-**④ Candidate Pool**: The AI generates 3-5 next-day candidates. For each:
-- **Why**: Concrete reason grounded in today's data (LHB buying + technical position + theme alignment)
-- **Risk**: What could go wrong?
-- **Watch level**: 重点关注 / 一般关注
-- This is raw material for tomorrow's pre_market.py, not trading instructions
-
-**⑤ Self-Scoring**:
-- P&L attribution (planned vs unplanned)
-- Discipline score (0-100)
-- One error logged
-
-#### Step 3: Save
-
-```bash
-cat /tmp/evening_final.md | skills/plan-review/.venv/bin/python skills/plan-review/scripts/journal.py append --section evening
-```
-
-> ### ✅ Evening Review Completion Criterion
-> Journal contains: 1) market narrative, 2) theme lifecycle judgment, 3) LHB analysis, 4) candidate pool with reasoning, 5) discipline score + error log.
+> ✅ **Evening Review Completion Criterion**: Journal 含市场回顾、题材判断、候选池、纪律打分。
 
 ---
 
@@ -247,7 +129,27 @@ When performing analysis, the AI should:
 2. **State uncertainty explicitly**: "炸板率 59% suggests high分歧 but 131 涨停 still indicates strong underlying demand — the signal is mixed"
 3. **Quality over quantity**: 3 well-analyzed candidates > 10 superficial mentions
 4. **"No trade" is a valid output**: If conditions aren't right, say so clearly
-5. **Override script suggestions when needed**: The scripts provide baseline analysis for efficiency. If the AI disagrees, explain why and provide its own judgment
+
+### ⛔ 数据真实性红线（硬性约束）
+
+5. **数据必须来自 market skill 脚本或外部可靠数据源**：每个数字必须能在已运行的脚本输出或用户提供的材料中找到来源。**禁止使用模型内部知识生成数值**。
+
+6. **无数据 = 停止分析**：
+
+   | 情况 | 必须输出的内容 |
+   |:---|:---|
+   | 股票技术指标数据获取失败 | "技术数据不可用，无法对该标的进行分析" |
+   | 龙虎榜数据未发布 | "龙虎榜数据通常在 16:30-17:00 后发布，当前尚未就绪" |
+   | 涨停池数据为空但为交易日 | "今日涨停数据未能成功获取，无法生成分析" |
+
+7. **绝对禁止编造**：
+   - 具体股票的成交价、买卖盘口
+   - 龙虎榜机构的买入/卖出金额
+   - 涨停股池的具体成分股名单
+   - 均线、MACD、KDJ 等任何技术指标的数值
+   - 资金流向净额的具体数值
+
+8. **不确定就说不知道**：遇到数据不完整、信息不充分的情况，明确告知用户，不得填补空白。
 
 ---
 
@@ -255,7 +157,7 @@ When performing analysis, the AI should:
 
 | Skill | Role |
 |:---|:---|
-| `market` | **Data faucet**: `pre_market.py`, `noon_review.py`, `evening_review.py`, plus individual scripts (`overview.py`, `limit_up.py`, `fund_flow.py`, `stock_profile.py`, `news.py`) |
+| `market` | **Data source**: `overview.py`, `limit_up.py`, `fund_flow.py`, `stock_profile.py`, `news.py` — AI invokes these on-demand to fetch real market data |
 | `sim-trade` | **Execution**: portfolio check (pre-market), trade verification (evening) |
 
 ---
@@ -264,8 +166,6 @@ When performing analysis, the AI should:
 
 | Data | Path |
 |:---|:---|
-| Daily journals | `data/journal/YYYYMMDD.md` |
+| Trading reports | `report/YYYYMMDD_{盘前计划,午间复盘,晚间复盘}.md` |
 | Output templates | `skills/plan-review/templates/*.md` |
-| Data scripts | `skills/market/scripts/pre_market.py`, `noon_review.py`, `evening_review.py` |
-| Skill scripts | `skills/plan-review/scripts/journal.py` |
 | Watchlist | `data/watchlist.json` |

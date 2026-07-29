@@ -636,7 +636,7 @@ def handle_technical(code, days):
             else:
                 try:
                     display_df["Date"] = pd.to_datetime(display_df["Date"]).dt.strftime("%Y-%m-%d")
-                except:
+                except (ValueError, TypeError):
                     pass
             
             # Print Trend (Price & SMA / EMA)
