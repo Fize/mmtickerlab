@@ -1,81 +1,49 @@
 ---
 name: sim-trade
-description: A-share simulation trading tool. Support resetting the portfolio, checking holdings/P&L, buying stocks, selling stocks, and querying transaction history under strict A-share trading rules (T+1, lot size, commissions, stamp tax, trading hours). A股模拟交易工具，支持账户初始化、持仓及盈亏查询、买入、卖出及交易历史查询。
+description: Reliable A-share paper-trading system backed by strict live-market data checks and an auditable SQLite ledger. Use when Codex needs to create or inspect a simulated account, place/cancel/process Shanghai, Shenzhen, or Beijing A-share limit orders, enforce trading sessions and T+1 settlement, inspect positions/P&L/history, audit balances, or diagnose whether AKShare data is sufficient for safe simulation. A股模拟交易系统，适用于严格行情门禁、限价委托、部分成交、T+1、持仓盈亏、交易流水和账本审计。
 ---
 
-# Sim-Trade Skill
+# Sim Trade
 
-This skill provides a complete local paper-trading simulation environment adhering to China's A-share market trading rules.
+Operate the deterministic CLI from the repository root. Never invent a quote, bypass a failed data check, or substitute cost for market value.
 
-## Core Rules Implemented
+## Set up
 
-1. **T+1 Settlement**: Stocks purchased today can only be sold on or after the next calendar day. `available_shares` is computed dynamically based on the purchase date.
-2. **Lot Size**: Buy orders must be in multiples of 100 shares. Sell orders allow any amount up to `available_shares` (to support odd lots).
-3. **Price Limits**: Normal stocks: ±10% limit; ST stocks: ±5% limit; ChiNext (30xxxx) and Star Market (68xxxx): ±20% limit; Beijing Stock Exchange (4xxxxx/8xxxxx): ±30% limit.
-4. **Trading Hours**: Orders are only executed during A-share trading hours (9:30-11:30 and 13:00-15:00 on weekdays). Can be bypassed with the `--force` flag.
-5. **Trading Fees**:
-   - Commission: 0.025% of trade value (minimum ¥5, charged on both buy and sell).
-   - Stamp Tax: 0.1% of trade value (charged on sell only).
-   - Transfer Fee: 0.002% of trade value (charged on both buy and sell).
+Create the skill-local environment only when it is missing:
 
-## Environment Setup
-
-Before using this skill, check if the local virtual environment `.venv` exists. If not, initialize it using `uv`:
 ```bash
-# Create the local virtual environment
 uv venv skills/sim-trade/.venv
-
-# Install required dependencies into the local virtual environment
 uv pip install --python skills/sim-trade/.venv -r skills/sim-trade/requirements.txt
 ```
 
-## Usage Guidelines
+Set the command prefix:
 
-- Run all scripts from the project root using the skill's local virtual environment python: `skills/sim-trade/.venv/bin/python`.
-- All account holdings, portfolios, and histories are stored locally inside the skill folder under `skills/sim-trade/data/simulation/`.
-
-## Script References
-
-### 1. Reset Account (`skills/sim-trade/scripts/reset.py`)
-Reset or initialize the simulation account.
-- `--cash CAPITAL`: Initial capital (default: 500,000 Yuan)
-- `--name ACCOUNT_NAME`: Account name (default: "我的模拟账户")
-- `--yes`: Skip confirmation prompt (non-interactive fallback)
 ```bash
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/reset.py --cash 1000000 --name "激进型账户"
+skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/simtrade.py
 ```
 
-### 2. View Portfolio (`skills/sim-trade/scripts/portfolio.py`)
-View current positions, cash balances, and real-time market value/P&L.
-```bash
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/portfolio.py
-```
+Use `--json` before the command when machine-readable output is required. Use `--db PATH` only for an explicitly requested alternate account database or isolated testing.
 
-### 3. Buy Stock (`skills/sim-trade/scripts/buy.py`)
-Place a buy order for a stock.
-- `<code>`: 6-digit stock code (e.g. `600519`)
-- `<qty>`: Quantity in shares (must be a multiple of 100)
-- `--price PRICE`: Buy price limit. If omitted, executes at the current real-time price.
-- `--force`: Bypass trading hours check.
-```bash
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/buy.py 600519 100
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/buy.py 000001 200 --price 10.50 --force
-```
+## Follow the workflow
 
-### 4. Sell Stock (`skills/sim-trade/scripts/sell.py`)
-Place a sell order for a stock.
-- `<code>`: 6-digit stock code (e.g. `600519`)
-- `<qty>`: Quantity in shares (must be <= available shares)
-- `--price PRICE`: Sell price limit. If omitted, executes at the current real-time price.
-- `--force`: Bypass trading hours check.
-```bash
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/sell.py 600519 100
-```
+1. Run `doctor --code CODE` before the first live-data operation of a session.
+2. Stop if `doctor` reports a failed required check. Do not place an order from partial or stale data.
+3. Create an account with `account create --name NAME --cash AMOUNT`. Do not reset or overwrite an account.
+4. Inspect a security with `quote CODE` before discussing a possible order.
+5. Submit only explicit limit orders with `order buy|sell CODE SHARES --price PRICE`.
+6. Report the returned order status exactly. `OPEN` and `PARTIALLY_FILLED` are not completed trades.
+7. Use `order process [--order-id ID]` during a trading session to retry open DAY orders against a new qualified order-book snapshot.
+8. Use `order cancel ID` to release an open order's frozen cash or shares.
+9. Use `portfolio`, `history`, and `audit` for review. If valuation is unavailable, preserve that state instead of calculating a substitute value.
 
-### 5. Transaction History (`skills/sim-trade/scripts/history.py`)
-View recent transaction logs.
-- `--code <code>`: Filter history by stock code.
-- `--n N`: Number of transaction records to display (default: 20).
-```bash
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/history.py --code 600519 --n 5
-```
+## Observe hard gates
+
+- Support only six-digit Shanghai, Shenzhen, and Beijing A-share stock codes recognized by the CLI.
+- Support limit orders only. Do not simulate market orders or fabricate fills.
+- Reject order placement outside an official trading day and the continuous-auction sessions 09:30–11:30 and 13:00–15:00 Asia/Shanghai.
+- Require a same-day, fresh, complete quote for matching: security identity, quote timestamp, last/pre-close, explicit upper/lower limits, listing date, and at least one side of the five-level book.
+- Leave an order open when its limit does not cross the visible book or visible quantity is insufficient.
+- Enforce next-trading-day availability for bought shares. Do not use calendar-day rollover.
+- Never expose or recreate the removed JSON/CSV account format, old single-action scripts, `reset`, or `--force`.
+
+Read [references/data_contract.md](references/data_contract.md) when diagnosing quote failures or changing a provider. Read [references/trading_rules.md](references/trading_rules.md) before changing trading, settlement, price-limit, odd-lot, or fee behavior. Read [references/command_reference.md](references/command_reference.md) for commands and statuses.

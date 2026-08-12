@@ -1,289 +1,88 @@
+"""Install HTTP retry/TLS handling before AKShare is imported.
+
+This module intentionally has import-time effects. Every sim-trade module imports it
+before importing AKShare so already-loaded AKShare submodules see the patched client.
+"""
+
+from __future__ import annotations
+
+import random
 import sys
 import time
-import random
+from typing import Any
+
 import requests
-import akshare.utils.func as ak_func
-import cache_db
+from curl_cffi import requests as curl_requests
 
-# 1. Patched requests.get for direct calls
-original_get = requests.get
 
-def my_patched_get(*args, **kwargs):
-    # Inject browser User-Agent and Connection: close to prevent IIS/Eastmoney blocks
-    headers = kwargs.get("headers")
-    if headers is None:
-        headers = {}
-    else:
-        headers = dict(headers)
-    if not any(k.lower() == "user-agent" for k in headers):
-        headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    if not any(k.lower() == "connection" for k in headers):
-        headers["Connection"] = "close"
-    kwargs["headers"] = headers
+_ORIGINAL_GET = requests.get
+_EASTMONEY_HOSTS = (
+    "push2.eastmoney.com",
+    "push2his.eastmoney.com",
+    "82.push2.eastmoney.com",
+    "datacenter.eastmoney.com",
+    "datacenter-web.eastmoney.com",
+)
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
-    # Clean up parameters for Eastmoney K-line API (remove deprecated f116 to prevent Connection Aborted)
-    url = args[0] if args else kwargs.get("url", "unknown")
-    if "push2his.eastmoney.com" in url:
-        params = kwargs.get("params")
-        if params is not None:
-            params = dict(params)
-            if "fields2" in params:
-                f2 = params["fields2"]
-                if "f116" in f2:
-                    params["fields2"] = f2.replace(",f116", "").replace("f116,", "").replace("f116", "")
-            kwargs["params"] = params
 
-    last_exception = None
-    max_retries = 5
-    base_delay = 1.0
-    random_delay_range = (0.5, 1.5)
-    
-    # Check if we should log
-    url = args[0] if args else kwargs.get("url", "unknown")
-    
-    for attempt in range(max_retries):
+def _headers(headers: dict[str, str] | None) -> dict[str, str]:
+    result = dict(headers or {})
+    if not any(key.lower() == "user-agent" for key in result):
+        result["User-Agent"] = _USER_AGENT
+    if not any(key.lower() == "connection" for key in result):
+        result["Connection"] = "close"
+    return result
+
+
+def _is_eastmoney(url: str) -> bool:
+    return any(host in url for host in _EASTMONEY_HOSTS)
+
+
+def _curl_response(url: str, *, params: Any = None, headers: Any = None, timeout: float = 15, **_: Any):
+    raw = curl_requests.get(url, params=params, headers=_headers(headers), timeout=timeout)
+    raw.raise_for_status()
+    response = requests.Response()
+    response.status_code = raw.status_code
+    response.headers = requests.structures.CaseInsensitiveDict(dict(raw.headers))
+    response.url = str(raw.url)
+    response.encoding = raw.encoding
+    response._content = raw.content
+    return response
+
+
+def patched_get(url: str, *args: Any, **kwargs: Any):
+    kwargs["headers"] = _headers(kwargs.get("headers"))
+    last_error: Exception | None = None
+    for attempt in range(4):
         try:
-            r = original_get(*args, **kwargs)
-            r.raise_for_status()
-            return r
-        except Exception as e:
-            last_exception = e
-            print(f"[akshare_patch] requests.get attempt {attempt+1}/{max_retries} failed for {url}: {type(e).__name__}: {str(e)}")
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt) + random.uniform(*random_delay_range)
-                time.sleep(delay)
-    raise last_exception
+            if _is_eastmoney(str(url)):
+                return _curl_response(str(url), **kwargs)
+            response = _ORIGINAL_GET(url, *args, **kwargs)
+            response.raise_for_status()
+            return response
+        except Exception as exc:  # provider failures need the original exception
+            last_error = exc
+            if attempt < 3:
+                time.sleep((0.4 * (2**attempt)) + random.uniform(0.05, 0.2))
+    assert last_error is not None
+    raise last_error
 
-requests.get = my_patched_get
 
-# 2. Patched request_with_retry for paginated calls
-def my_request_with_retry(
-    url: str,
-    params: dict = None,
-    timeout: int = 15,
-    max_retries: int = 5,
-    base_delay: float = 1.0,
-    random_delay_range: tuple = (0.5, 1.5),
-) -> requests.Response:
-    """
-    Patched version of akshare's request_with_retry that uses our patched requests.get
-    without persistent session or custom adapter to prevent Connection Aborted/Remote Disconnected errors.
-    """
-    last_exception = None
-    for attempt in range(max_retries):
-        try:
-            # Call our patched get directly
-            r = my_patched_get(url, params=params, timeout=timeout)
-            return r
-        except Exception as e:
-            last_exception = e
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt) + random.uniform(*random_delay_range)
-                time.sleep(delay)
-    raise last_exception
+requests.get = patched_get
 
-# Apply monkeypatch to the module
-ak_func.request_with_retry = my_request_with_retry
+# AKShare is imported only after requests.get has been replaced.
+import akshare.utils.func as _ak_func  # noqa: E402
 
-# Apply monkeypatches to already loaded submodules if any
-for mod_name, mod in list(sys.modules.items()):
-    if mod_name.startswith("akshare."):
-        if hasattr(mod, "request_with_retry"):
-            setattr(mod, "request_with_retry", my_request_with_retry)
-        if hasattr(mod, "requests"):
-            req_mod = getattr(mod, "requests")
-            if hasattr(req_mod, "__name__") and req_mod.__name__ == "requests":
-                if hasattr(req_mod, "get"):
-                    req_mod.get = my_patched_get
 
-def get_single_stock_realtime(code: str) -> dict:
-    """
-    Get a single stock's real-time quote from Sina's direct API.
-    """
-    clean = code.strip().upper()
-    if "." in clean:
-        clean = clean.split(".")[0]
-    for prefix in ["SH", "SZ", "BJ"]:
-        if clean.startswith(prefix):
-            clean = clean[len(prefix):]
-        if clean.endswith(prefix):
-            clean = clean[:-len(prefix)]
-    clean = clean.strip()
-    
-    # Try reading from cache
-    cache_key = f"realtime:{clean}"
-    cached_val = cache_db.get_cache(cache_key)
-    if cached_val is not None:
-        return cached_val
+def request_with_retry(url: str, params: dict | None = None, timeout: int = 15, **_: Any):
+    return patched_get(url, params=params, timeout=timeout)
 
-    if clean.startswith(('60', '68', '51')):
-        symbol = f"sh{clean}"
-    elif clean.startswith(('00', '30')):
-        symbol = f"sz{clean}"
-    elif clean.startswith(('8', '4')):
-        symbol = f"bj{clean}"
-    else:
-        raise ValueError(f"Unknown exchange for stock code: {code}")
-        
-    url = f"http://hq.sinajs.cn/list={symbol}"
-    r = original_get(url, headers={"Referer": "http://finance.sina.com.cn"}, timeout=5)
-    r.raise_for_status()
-    text = r.text
-    
-    start_idx = text.find('"')
-    end_idx = text.rfind('"')
-    if start_idx == -1 or end_idx == -1 or start_idx >= end_idx:
-        raise ValueError("Invalid response format from Sina API")
-        
-    data_str = text[start_idx+1:end_idx]
-    if not data_str:
-        raise ValueError(f"No data returned for stock code {code}")
-        
-    parts = data_str.split(",")
-    if len(parts) < 30:
-        raise ValueError("Incomplete data returned from Sina API")
-        
-    name = parts[0]
-    open_p = float(parts[1]) if parts[1] else 0.0
-    pre_close = float(parts[2]) if parts[2] else 0.0
-    current_p = float(parts[3]) if parts[3] else 0.0
-    high = float(parts[4]) if parts[4] else 0.0
-    low = float(parts[5]) if parts[5] else 0.0
-    volume = float(parts[8]) if parts[8] else 0.0
-    turnover = float(parts[9]) if parts[9] else 0.0
-    
-    change = current_p - pre_close
-    change_pct = (change / pre_close * 100) if pre_close > 0 else 0.0
-    
-    info = {
-        "code": clean,
-        "name": name,
-        "price": current_p,
-        "pre_close": pre_close,
-        "open": open_p,
-        "high": high,
-        "low": low,
-        "change": change,
-        "change_pct": change_pct,
-        "volume": volume,
-        "turnover": turnover
-    }
-    # Save to cache
-    cache_db.set_cache(cache_key, info, "realtime")
-    return info
 
-def get_multi_stocks_realtime(codes: list) -> dict:
-    """
-    Get multiple stocks' real-time quotes from Sina's direct API in a single request.
-    """
-    results = {}
-    uncached_codes = []
-    symbol_to_code = {}
-    symbols = []
-    
-    for code in codes:
-        clean = code.strip().upper()
-        if "." in clean:
-            clean = clean.split(".")[0]
-        for prefix in ["SH", "SZ", "BJ"]:
-            if clean.startswith(prefix):
-                clean = clean[len(prefix):]
-            if clean.endswith(prefix):
-                clean = clean[:-len(prefix)]
-        clean = clean.strip()
-        
-        if not clean:
-            continue
-            
-        # Try cache first
-        cache_key = f"realtime:{clean}"
-        cached_val = cache_db.get_cache(cache_key)
-        if cached_val is not None:
-            results[clean] = cached_val
-            continue
-            
-        uncached_codes.append(clean)
-        
-        if clean.startswith(('60', '68', '51')):
-            symbol = f"sh{clean}"
-        elif clean.startswith(('00', '30')):
-            symbol = f"sz{clean}"
-        elif clean.startswith(('8', '4')):
-            symbol = f"bj{clean}"
-        else:
-            continue
-            
-        symbols.append(symbol)
-        symbol_to_code[symbol] = clean
-        
-    if not symbols:
-        return results
-        
-    url = f"http://hq.sinajs.cn/list={','.join(symbols)}"
-    r = original_get(url, headers={"Referer": "http://finance.sina.com.cn"}, timeout=5)
-    r.raise_for_status()
-    text = r.text
-    
-    lines = text.strip().split("\n")
-    for line in lines:
-        if not line:
-            continue
-        if not line.startswith("var hq_str_"):
-            continue
-            
-        symbol_part = line[11:19]  # e.g. sh600519
-        code = symbol_to_code.get(symbol_part)
-        if not code:
-            eq_idx = line.find("=")
-            if eq_idx != -1:
-                symbol_part = line[11:eq_idx]
-                code = symbol_to_code.get(symbol_part)
-                
-        if not code:
-            continue
-            
-        start_idx = line.find('"')
-        end_idx = line.rfind('"')
-        if start_idx == -1 or end_idx == -1 or start_idx >= end_idx:
-            continue
-            
-        data_str = line[start_idx+1:end_idx]
-        if not data_str:
-            continue
-            
-        parts = data_str.split(",")
-        if len(parts) < 30:
-            continue
-            
-        name = parts[0]
-        open_p = float(parts[1]) if parts[1] else 0.0
-        pre_close = float(parts[2]) if parts[2] else 0.0
-        current_p = float(parts[3]) if parts[3] else 0.0
-        high = float(parts[4]) if parts[4] else 0.0
-        low = float(parts[5]) if parts[5] else 0.0
-        volume = float(parts[8]) if parts[8] else 0.0
-        turnover = float(parts[9]) if parts[9] else 0.0
-        
-        change = current_p - pre_close
-        change_pct = (change / pre_close * 100) if pre_close > 0 else 0.0
-        
-        info = {
-            "code": code,
-            "name": name,
-            "price": current_p,
-            "pre_close": pre_close,
-            "open": open_p,
-            "high": high,
-            "low": low,
-            "change": change,
-            "change_pct": change_pct,
-            "volume": volume,
-            "turnover": turnover
-        }
-        
-        # Save to cache
-        cache_key = f"realtime:{code}"
-        cache_db.set_cache(cache_key, info, "realtime")
-        results[code] = info
-        
-    return results
+_ak_func.request_with_retry = request_with_retry
+for _name, _module in list(sys.modules.items()):
+    if _name.startswith("akshare.") and hasattr(_module, "request_with_retry"):
+        setattr(_module, "request_with_retry", request_with_retry)

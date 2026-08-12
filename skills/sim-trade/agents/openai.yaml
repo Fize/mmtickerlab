@@ -1,0 +1,4 @@
+interface:
+  display_name: "A股模拟交易"
+  short_description: "严格行情门禁与可审计账本驱动的 A 股模拟交易系统"
+  default_prompt: "Use $sim-trade to inspect my simulated A-share account and safely process an explicit limit order."

@@ -39,19 +39,16 @@ mmtickerlab/
         ├── SKILL.md                  # Usage reference for Claude
         ├── requirements.txt          # Skill-specific deps
         ├── scripts/
-        │   ├── akshare_patch.py      # Retry + User-Agent patching
-        │   ├── cache_db.py           # SQLite caching
-        │   ├── reset.py              # Account initialization
-        │   ├── portfolio.py          # Holdings, P&L, market value
-        │   ├── buy.py                # Buy order (T+1, lot size, price limits)
-        │   ├── sell.py               # Sell order (T+1, fees, stamp tax)
-        │   └── history.py            # Transaction history
+        │   ├── simtrade.py           # Unified account/order/portfolio/audit CLI
+        │   ├── akshare_patch.py      # Retry + East Money TLS handling
+        │   └── simtrade_core/        # Data gate, SQLite ledger, rules, matching
         ├── references/
-        │   └── portfolio_schema.md   # Portfolio JSON schema
+        │   ├── data_contract.md      # Required quote/calendar evidence
+        │   ├── trading_rules.md      # Versioned market and fee rules
+        │   └── command_reference.md  # Commands and order statuses
+        ├── tests/                    # Isolated database and live read-only tests
         └── data/                     # Simulation data (gitignored)
-            └── simulation/
-                ├── portfolio.json    # Account state
-                └── history.csv       # Order history
+            └── simulation.db         # Accounts, orders, fills, lots and ledgers
 ```
 
 ## Setup
@@ -80,7 +77,7 @@ Add this project's `skills.json` to your Claude Code config:
 }
 ```
 
-## Available Tools (17 total)
+## Available Tools
 
 ### 行情数据 (Market Data)
 | Tool | Script | akshare API |
@@ -116,22 +113,25 @@ Add this project's `skills.json` to your Claude Code config:
 | 大单追踪 | `fund_flow.py --type bigdeal` | `stock_fund_flow_big_deal()` |
 
 ### 模拟交易 (Simulation Trading)
-| Tool | Script | Rules |
+| Tool | Command | Rules |
 |---|---|---|
-| 初始化账户 | `reset.py --cash 500000` | Sets initial capital, T+1 sync |
-| 买入 | `buy.py <code> <qty>` | Multiples of 100, price limit check, fees |
-| 卖出 | `sell.py <code> <qty>` | T+1 available check, stamp tax 0.1% |
-| 持仓查询 | `portfolio.py` | Real-time market value & P&L |
-| 交易历史 | `history.py --code 600519` | Filterable order log |
+| 数据健康检查 | `simtrade.py doctor --code 600519` | Calendar, quote contract, matching readiness |
+| 创建账户 | `simtrade.py account create --name NAME --cash 500000` | Append-only opening ledger |
+| 限价买卖 | `simtrade.py order buy\|sell CODE SHARES --price PRICE` | Strict session/data gates, visible-book fills |
+| 订单管理 | `simtrade.py order list\|show\|cancel\|process` | Partial fills, cancellation, DAY expiry |
+| 持仓和历史 | `simtrade.py portfolio`, `simtrade.py history` | T+1 lots, explicit unavailable valuations |
+| 账本审计 | `simtrade.py audit` | Cash, freezes, fills and position invariants |
 
 ## East Money TLS Note
 
-The market skill patches East Money API calls through `curl_cffi` with Chrome 120 TLS impersonation (`akshare_patch.py`). If queries hang on East Money endpoints, verify `curl_cffi` is installed in the market venv.
+The market and sim-trade skills route known East Money calls through `curl_cffi` with retries. If queries hang, verify the relevant skill-local environment contains `curl_cffi` and inspect provider diagnostics.
 
 ## Key Rules (Sim-Trade)
 
-- **T+1**: Purchased shares available for sale starting next calendar day
-- **Lot**: Buy multiples of 100; sell any amount
-- **Limits**: ±10% (normal), ±5% (ST), ±20% (ChiNext/Star), ±30% (Beijing)
-- **Hours**: Weekdays 9:30–11:30, 13:00–15:00 (`--force` to bypass)
-- **Fees**: 0.025% commission (min ¥5) + 0.002% transfer fee (both sides); 0.1% stamp tax (sell only)
+- **Data gate**: No complete, fresh quote and confirmed trading day means no order or fill
+- **T+1**: Purchased lots become sellable on the next confirmed trading day
+- **Matching**: Limit orders consume only visible five-level liquidity and may remain open or partially filled
+- **Lot/tick**: Buy multiples of 100, constrained odd-lot liquidation, ¥0.01 tick
+- **Hours**: Confirmed trading days, 09:30–11:30 and 13:00–15:00; no bypass
+- **Fees**: Configurable commission + 0.001% transfer fee both sides + 0.05% sell stamp tax
+- **Storage**: Transactional SQLite ledger; no JSON/CSV reset or compatibility path
