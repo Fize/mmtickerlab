@@ -5,8 +5,8 @@ description = "A-share trading assistant skills for Claude Code"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "akshare>=1.13.0",
-    "pandas>=2.0.0",
+    "akshare==1.18.84",
+    "pandas==2.3.3",
 ]
 
 [tool.uv]

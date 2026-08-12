@@ -1,171 +1,116 @@
 ---
 name: plan-review
 description: |
-  Standardized pre-market preparation, noon review, and evening review workflows plus trading journal management.
-  三段式交易操作系统：盘前准备→午间复盘→晚间复盘，配合交易日志工具记录每一天。
-  触发词：盘前准备、午间复盘、晚间复盘、交易计划、复盘、写日志、交易日志、今日计划、纪律打分。
-  ——核心原则：模板定结构，prompt 定框架，AI 按需用 market 脚本取真实数据做分析，交易者负责最终决策。
+  基于已校验 AKShare 数据生成盘前计划、盘中复盘和盘后复盘。用于“盘前准备、盘中复盘、午间复盘、盘后复盘、收盘复盘、今日计划”等请求。严格执行数据完整性门禁：缺少任一必需数据时只报告阻断原因，不创建报告。
 ---
 
-# Plan & Review Skill
+# Plan & Review
 
-> 交易操作系统：没有计划不交易，没有复盘不成长。
+这是一个只读的市场研究与复盘流程。三类报告分别回答：开盘前需要观察什么、午间哪些假设得到验证、收盘后全天结构如何演变。
 
-This skill provides the **process backbone** for the mmtickerlab project. It connects the `market` data skill and `sim-trade` execution skill into a disciplined daily workflow.
+## 不可违反的规则
 
-**Architecture principle**: Templates define the structure, prompts define the analysis framework, and AI uses `market` skill scripts on-demand to fetch real data. This ensures analysis is grounded in actual market data, not fabricated.
+1. 先运行 `workflow.py prepare`，返回 `status: ready` 后才能创建对应报告。
+2. 任一必需数据缺失、过期、日期不一致、字段变化或覆盖率不达标时，停止生成；向用户列出错误和建议的下一次采集窗口。
+3. 只使用数据包内的数值。每条量化陈述在同一行用 `[E01]` 形式引用证据。
+4. 区分事实、解释、假设和反证；不把实时值写成收盘值，不用当前截面回填历史截面。
+5. 报告完成后必须运行 `workflow.py validate`。验证失败不交付报告。
+6. 不调用任何委托或执行层工具；本技能只采集市场数据、形成研究计划和复盘结论。
 
-There are three daily checkpoints:
+## 环境
 
-| Checkpoint | Who fetches data | Who analyzes |
-|:---|:---|:---|
-| **Pre-Market** (盘前准备) | AI via `market` scripts | AI synthesizes plan |
-| **Noon Review** (午间复盘) | AI via `market` scripts | AI checks alignment |
-| **Evening Review** (晚间复盘) | AI via `market` scripts | AI performs deep复盘 |
-
-**Output**: Reports are saved to `report/` in the project root. Filename format: `YYYYMMDD_盘前计划.md`, `YYYYMMDD_午间复盘.md`, `YYYYMMDD_晚间复盘.md`. If the user specifies an output location, use that instead.
-
----
-
-## Environment Setup
+所有命令从项目根目录运行。数据采集使用 market 技能自己的环境；工作流脚本只依赖 Python 标准库。
 
 ```bash
-uv venv skills/plan-review/.venv
-uv pip install --python skills/plan-review/.venv -r skills/plan-review/requirements.txt
+uv venv skills/market/.venv
+uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 ```
 
----
+## 数据生命周期
 
-## Data Sources
+实时全市场、资金流和龙虎榜接口不能可靠重建任意历史时点，因此必须在业务窗口内采集带时间戳的原子快照：
 
-Plan-review 不运行数据获取脚本。数据由 AI 通过 `market` skill 的查询脚本按需获取：
+| 快照 | 允许时间（Asia/Shanghai） | 内容 |
+|---|---|---|
+| 午间 | 交易日 11:30-13:00 | 全市场宽度与成交额、资金流、涨跌停活动、指数 |
+| 收盘 | 交易日 15:05 后；龙虎榜需 16:30 后 | 全市场收盘结构、资金流、涨跌停活动、指数、龙虎榜 |
 
-| 数据需求 | market skill 脚本 | 用途 |
-|:---|:---|:---|
-| 全球指数 + A50 | `overview.py` | 宏观定调 |
-| 市场涨跌 + 涨停跌停 | `overview.py` / `limit_up.py` | 情绪判断 |
-| 概念/行业资金流向 | `fund_flow.py` | 题材筛选 |
-| 个股技术指标 | `stock_profile.py --mode technical` | 交易预案 |
-| 个股实时行情 | `stock_profile.py --mode realtime` | 午间对齐 |
-| 个股新闻 | `news.py` | 消息面补充 |
-| 龙虎榜* | — | 晚间复盘需要，需 AI 浏览外部数据源 |
+```bash
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase noon --date YYYYMMDD
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase close --date YYYYMMDD
+```
 
-> *龙虎榜数据在 16:30-17:00 后才发布，晚间复盘时通过财联社等网站获取。
+如果 `plan-review/.venv` 尚未建立，可用系统 Python 运行 `workflow.py`；它会通过子进程调用 `market/.venv`。
 
----
+## 盘前准备
 
-## Daily Workflows
+目标是给当日建立可证伪的观察框架，不预测无法验证的确定结果。
 
-### Phase 1: Pre-Market Preparation (盘前准备)
+必需数据：
 
-**Goal**: 开盘前生成完整的交易计划。
+- AKShare 交易日历；
+- 前一交易日收盘全市场快照；
+- 前一交易日指数历史与收盘资金流快照；
+- 前五个交易日涨停、炸板和跌停活动；
+- 已结束交易日的美股指数，以及采集时点的 A50、美元人民币；
+- 自选股历史（仅在用户配置自选股时必需）。
 
-**模块一：宏观定调**
-AI 按需运行 `overview.py`（获取全球指数）+ `news.py`（宏观新闻），分析：
-- 今日高开/平开/低开概率？外资情绪偏多/偏空？
-- Output: 1-2 句宏观定调
+```bash
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
+```
 
-**模块二：情绪判断**
-AI 按需运行 `overview.py`（涨跌分布）+ `limit_up.py`（涨停池）+ `fund_flow.py`（资金流向），分析：
-- 赚钱效应在哪里？连板梯队是否健康？
-- Output: 情绪定性 + 最强 1-2 条主线
+成功后读取返回的数据包和 [templates/pre_market.md](templates/pre_market.md)，创建 `report/YYYYMMDD_盘前计划.md`。重点说明隔夜背景、前日结构、最多三条今日假设及其失效条件。
 
-**模块三：题材筛选**
-AI 交叉分析资金流向 + 涨停行业 + 宏观新闻：
-- 哪些题材有持续性？哪些是一日游？
-- Output: ≤3 个焦点题材
+## 盘中复盘
 
-**模块四：交易预案（核心）**
-AI 按需运行 `stock_profile.py --mode technical` 获取自选股技术指标，分析：
-- 当前技术位置？入场信号？止损价位？
-- **If no clear setups, state "今日无符合条件的交易机会"**
-- Output: ≤3 个 If-Then 预案
+目标是用午间截面逐条复核盘前假设。没有同日盘前报告或午间快照时不能生成。
 
-**模块五：仓位纪律**
-基于宏观和情绪，AI 判断仓位上限。
+先在午间窗口执行 `capture --phase noon`，再运行：
 
-**输出**：将完整交易计划写入 `report/YYYYMMDD_盘前计划.md`（或用户指定的路径）。
+```bash
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase noon --date YYYYMMDD
+```
 
-> ✅ **Pre-Market Completion Criterion**: Journal 含完整 5 模块。**No plan = no trading.**
+成功后读取数据包、同日盘前报告和 [templates/intraday_review.md](templates/intraday_review.md)，创建 `report/YYYYMMDD_盘中复盘.md`。每条盘前假设只能判为“确认、部分确认、失效、证据不足”之一，并写出下午需验证的收盘数据。
 
----
+## 盘后复盘
 
-### Phase 2: Noon Review (午间复盘)
+目标是复核全天判断、识别结构演变并形成次日研究清单。没有同日盘前报告、盘中报告或完整收盘快照时不能生成。
 
-**Goal**: 检查上午走势是否符合计划。
+16:30 后执行 `capture --phase close`，再运行：
 
-AI 按需运行 `overview.py`（午间指数）+ `stock_profile.py --mode realtime`（计划标的实时价）：
-1. 上午指数表现？成交量 vs 昨日？
-2. 对照计划检查每个标的：触发条件了吗？有异常走弱吗？
-3. 午间冲动检查
-4. 下午策略
+```bash
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase post --date YYYYMMDD
+```
 
-**输出**：将复盘写入 `report/YYYYMMDD_午间复盘.md`（或用户指定的路径）。
+成功后读取数据包、前两份报告和 [templates/post_market.md](templates/post_market.md)，创建 `report/YYYYMMDD_盘后复盘.md`。
 
----
+题材生命周期使用六类，而不是把不同维度混在同一分类中：
 
-### Phase 3: Evening Review (晚间复盘)
+- 观察：首次出现，持续性证据不足；
+- 启动：广度与强度同步改善，资金开始一致；
+- 扩散：参与面继续扩大，核心和跟随增强；
+- 高潮：绝对强度高但边际改善放缓，拥挤风险上升；
+- 分歧：内部明显分化，仍有核心承接；
+- 退潮：广度、强度、持续性和资金多数转弱。
 
-**Goal**: 深度复盘——市场回放、自我打分、次日准备。
+每次分类同时列出广度、强度、持续性、资金一致性和反证。若证据冲突，选择“分歧”或“观察”，不得强行归类。
 
-AI 综合分析当日数据：
-1. **Market Narrative**: 今日主导故事，一句话
-2. **Theme Lifecycle**: 主导题材所处阶段（启动/发酵/高潮/分歧/退潮）
-3. **LHB Analysis**: 机构买卖/游资动向（通过财联社等外部数据源）
-4. **Candidate Pool**: 3-5 个次日候选，含技术理由 + 风险提示
-5. **Self-Scoring**: P&L 归因 + 纪律打分（0-100）+ 一条错误记录
+## 报告验证
 
-**输出**：将复盘写入 `report/YYYYMMDD_晚间复盘.md`（或用户指定的路径）。
+```bash
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py validate --phase pre --date YYYYMMDD
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py validate --phase noon --date YYYYMMDD
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py validate --phase post --date YYYYMMDD
+```
 
-> ✅ **Evening Review Completion Criterion**: Journal 含市场回顾、题材判断、候选池、纪律打分。
+验证器检查：数据包状态和日期、必需章节、bundle_id、证据编号、量化陈述的同行引用，以及禁止进入报告的执行层内容。
 
----
+## 数据文件
 
-## AI Analysis Guidelines
+- 原始报告快照：`skills/market/data/report_snapshots/YYYYMMDD/`
+- 阶段数据包：`skills/plan-review/data/YYYYMMDD/`
+- 报告：`report/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md`
+- 自选股（可选）：`data/watchlist.json`
 
-When performing analysis, the AI should:
-
-1. **Ground every judgment in data**: "Because 涨停 131 家 and 半导体净流入 119 亿..." not "半导体 looks strong"
-2. **State uncertainty explicitly**: "炸板率 59% suggests high分歧 but 131 涨停 still indicates strong underlying demand — the signal is mixed"
-3. **Quality over quantity**: 3 well-analyzed candidates > 10 superficial mentions
-4. **"No trade" is a valid output**: If conditions aren't right, say so clearly
-
-### ⛔ 数据真实性红线（硬性约束）
-
-5. **数据必须来自 market skill 脚本或外部可靠数据源**：每个数字必须能在已运行的脚本输出或用户提供的材料中找到来源。**禁止使用模型内部知识生成数值**。
-
-6. **无数据 = 停止分析**：
-
-   | 情况 | 必须输出的内容 |
-   |:---|:---|
-   | 股票技术指标数据获取失败 | "技术数据不可用，无法对该标的进行分析" |
-   | 龙虎榜数据未发布 | "龙虎榜数据通常在 16:30-17:00 后发布，当前尚未就绪" |
-   | 涨停池数据为空但为交易日 | "今日涨停数据未能成功获取，无法生成分析" |
-
-7. **绝对禁止编造**：
-   - 具体股票的成交价、买卖盘口
-   - 龙虎榜机构的买入/卖出金额
-   - 涨停股池的具体成分股名单
-   - 均线、MACD、KDJ 等任何技术指标的数值
-   - 资金流向净额的具体数值
-
-8. **不确定就说不知道**：遇到数据不完整、信息不充分的情况，明确告知用户，不得填补空白。
-
----
-
-## Integration with Existing Skills
-
-| Skill | Role |
-|:---|:---|
-| `market` | **Data source**: `overview.py`, `limit_up.py`, `fund_flow.py`, `stock_profile.py`, `news.py` — AI invokes these on-demand to fetch real market data |
-| `sim-trade` | **Execution**: portfolio check (pre-market), trade verification (evening) |
-
----
-
-## Data Locations
-
-| Data | Path |
-|:---|:---|
-| Trading reports | `report/YYYYMMDD_{盘前计划,午间复盘,晚间复盘}.md` |
-| Output templates | `skills/plan-review/templates/*.md` |
-| Watchlist | `data/watchlist.json` |
+快照和数据包是审计证据，不要手工修改。需要重新采集时重新运行 `capture`，并重新执行后续 `prepare` 与 `validate`。

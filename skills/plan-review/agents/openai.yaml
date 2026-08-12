@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan & Review"
+  short_description: "Validated pre-market, intraday, and post-market reports"
+  default_prompt: "Use $plan-review to create the requested market report from validated data, or explain which required dataset blocks it."

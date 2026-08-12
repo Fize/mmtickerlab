@@ -25,6 +25,22 @@ uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 
 ## Script References
 
+### 0. Strict report datasets (`skills/market/scripts/report_data.py`)
+
+Machine-readable adapters used by `plan-review`. Each command emits a single JSON document, includes source/retrieval metadata and validation checks, and exits with code 2 instead of returning partial data when a required check fails.
+
+```bash
+skills/market/.venv/bin/python skills/market/scripts/report_data.py calendar --date 20260812 --count 10
+skills/market/.venv/bin/python skills/market/scripts/report_data.py indices --date 20260812 --count 60
+skills/market/.venv/bin/python skills/market/scripts/report_data.py snapshot --date 20260812 --session close
+skills/market/.venv/bin/python skills/market/scripts/report_data.py flows --date 20260812 --session close
+skills/market/.venv/bin/python skills/market/scripts/report_data.py limits --date 20260812
+skills/market/.venv/bin/python skills/market/scripts/report_data.py lhb --date 20260812
+skills/market/.venv/bin/python skills/market/scripts/report_data.py overnight --date 20260813
+```
+
+`snapshot` and `flows` only accept the current trading date in the noon or close collection window. `lhb` only accepts the current date after 16:30. This intentionally prevents current values from being mislabeled as historical snapshots.
+
 ### 1. Market Overview (`skills/market/scripts/overview.py`)
 Show a broad overview of the A-share market (e.g., indices, general up/down stats).
 ```bash

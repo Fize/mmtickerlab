@@ -1,4 +1,4 @@
-akshare
-pandas
-requests
-curl_cffi
+akshare==1.18.84
+pandas==2.3.3
+requests==2.34.2
+curl_cffi==0.16.0

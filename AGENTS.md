@@ -48,13 +48,14 @@ Each skill has its own `cache_db.py` in `scripts/` that stores data in a skill-l
 
 ## Plan & Review skill (plan-review)
 
-- **Purpose**: Standardized pre-market preparation, noon review, and evening review workflows + journal management
-- **Journal data**: `data/journal/YYYYMMDD.md` (one markdown file per day with 盘前计划/午间复盘/晚间复盘 sections)
-- **Script path**: `skills/plan-review/scripts/journal.py` (create/append/view/list journal entries)
-- **No external deps**: uses Python stdlib only
-- **Usage**: `skills/plan-review/.venv/bin/python skills/plan-review/scripts/journal.py create --plan "..."`
+- **Purpose**: Strict pre-market, intraday, and post-market research reports backed by validated AKShare snapshots
+- **Workflow**: `skills/plan-review/scripts/workflow.py` (`capture`, `prepare`, `validate`)
+- **Bundles**: `skills/plan-review/data/YYYYMMDD/{pre,noon,post}_bundle.json`
+- **Reports**: `report/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md`
+- **Hard gate**: a missing, stale, incomplete, or schema-invalid required dataset blocks report creation
+- **No external deps in workflow**: it calls `skills/market/scripts/report_data.py` through the market venv
 
-This is the **process layer** that connects `market` (data) and `sim-trade` (execution) into a daily routine. See `skills/plan-review/SKILL.md` for the full workflow.
+This is a read-only process layer over `market` data. See `skills/plan-review/SKILL.md` for the full workflow.
 ## East Money TLS blocking (market only)
 
-East Money APIs block Python's default `requests` TLS fingerprint. The market skill's `akshare_patch.py` routes East Money domain calls through `curl_cffi` with Chrome 120 impersonation. If a script hangs on East Money endpoints, verify `curl_cffi` is installed in the market venv.
+East Money APIs can block Python's default `requests` TLS fingerprint. The market skill's `akshare_patch.py` routes known East Money domains through plain `curl_cffi` with retry logic; current endpoint tests show browser impersonation causes connection drops. If an endpoint hangs, verify `curl_cffi` is installed and inspect the retry diagnostics.
