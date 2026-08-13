@@ -66,6 +66,51 @@ def _book(data: dict[str, Any], pairs: tuple[tuple[str, str], ...]) -> tuple[Boo
     return tuple(levels)
 
 
+def _sina_quote(code: str, exchange: str) -> dict[str, Any]:
+    symbol = f"{exchange.lower()}{code}"
+    try:
+        response = requests.get(
+            f"http://hq.sinajs.cn/list={symbol}",
+            headers={"Referer": "http://finance.sina.com.cn"},
+            timeout=5,
+        )
+        response.encoding = "gbk"
+        text = response.text
+    except Exception as exc:
+        raise DataUnavailable(f"Failed to fetch Sina order book for {code}: {exc}") from exc
+    if not text.strip().startswith(f"var hq_str_{symbol}="):
+        raise DataUnavailable(f"Sina returned the wrong security for {code}")
+    start, end = text.find('"'), text.rfind('"')
+    if start < 0 or end <= start:
+        raise DataUnavailable(f"Invalid Sina order book response for {code}")
+    parts = text[start + 1:end].split(",")
+    if len(parts) < 32 or not parts[0].strip():
+        raise DataUnavailable(f"Incomplete Sina order book response for {code}")
+    try:
+        quote_at = datetime.strptime(f"{parts[30]} {parts[31]}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ)
+    except ValueError as exc:
+        raise DataUnavailable(f"Invalid Sina quote timestamp for {code}") from exc
+
+    def levels(pairs: tuple[tuple[int, int], ...]) -> tuple[BookLevel, ...]:
+        result: list[BookLevel] = []
+        for quantity_index, price_index in pairs:
+            price = _price_cents(parts[price_index])
+            quantity = int(_number(parts[quantity_index]) or 0)
+            if price and quantity > 0:
+                result.append(BookLevel(price, quantity))
+        return tuple(result)
+
+    return {
+        "name": parts[0].strip(),
+        "last_cents": _price_cents(parts[3]) or 0,
+        "pre_close_cents": _price_cents(parts[2]) or 0,
+        "quote_at": quote_at,
+        "bids": levels(((10, 11), (12, 13), (14, 15), (16, 17), (18, 19))),
+        "asks": levels(((20, 21), (22, 23), (24, 25), (26, 27), (28, 29))),
+        "raw": parts,
+    }
+
+
 class EastMoneyQuoteProvider:
     """Strict single-security five-level quote adapter."""
 
@@ -94,6 +139,12 @@ class EastMoneyQuoteProvider:
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, dict):
             raise DataUnavailable(f"{clean} 行情响应缺少 data", details={"provider_response": payload})
+        response_code = str(data.get("f57") or "").zfill(6)
+        if response_code != clean:
+            raise DataUnavailable(
+                f"Quote provider returned the wrong security for {clean}",
+                details={"requested_code": clean, "provider_code": response_code},
+            )
 
         fetched_at = datetime.now(TZ)
         quote_at = _quote_time(data.get("f86"))
@@ -103,12 +154,58 @@ class EastMoneyQuoteProvider:
         asks = _book(data, (("f39", "f40"), ("f37", "f38"), ("f35", "f36"), ("f33", "f34"), ("f31", "f32")))
         last = _price_cents(data.get("f43")) or 0
         pre_close = _price_cents(data.get("f60")) or 0
-        status = "TRADING" if last > 0 and pre_close > 0 and (bids or asks) else "CLOSED_OR_NO_BOOK"
+        provider_status = int(data["f292"]) if str(data.get("f292", "")).isdigit() else None
+        source = "EastMoney.push2/AKShare-transport"
+        raw: dict[str, Any] = {"eastmoney": data}
+        if provider_status == 2 and not (bids or asks):
+            sina = _sina_quote(clean, exchange)
+            eastmoney_name = str(data.get("f58") or "").strip()
+            time_difference = abs((sina["quote_at"] - quote_at).total_seconds())
+            price_tolerance = max(5, round(pre_close * 0.005))
+            consistency_issues: list[str] = []
+            if sina["name"] != eastmoney_name:
+                consistency_issues.append("security name mismatch")
+            if sina["pre_close_cents"] != pre_close:
+                consistency_issues.append("previous close mismatch")
+            if time_difference > 30:
+                consistency_issues.append("quote timestamps differ by more than 30 seconds")
+            if last <= 0 or abs(sina["last_cents"] - last) > price_tolerance:
+                consistency_issues.append("last prices differ beyond tolerance")
+            if consistency_issues:
+                raise DataUnavailable(
+                    f"Quote providers are inconsistent for {clean}",
+                    details={
+                        "issues": consistency_issues,
+                        "eastmoney_name": eastmoney_name,
+                        "sina_name": sina["name"],
+                        "eastmoney_last_cents": last,
+                        "sina_last_cents": sina["last_cents"],
+                        "eastmoney_pre_close_cents": pre_close,
+                        "sina_pre_close_cents": sina["pre_close_cents"],
+                        "timestamp_difference_seconds": time_difference,
+                    },
+                )
+            quote_at = sina["quote_at"]
+            bids = sina["bids"]
+            asks = sina["asks"]
+            last = sina["last_cents"]
+            pre_close = sina["pre_close_cents"]
+            source = "EastMoney metadata + Sina order book"
+            raw["sina"] = sina["raw"]
+        if provider_status == 6:
+            status = "SUSPENDED"
+        elif provider_status != 2:
+            status = "UNKNOWN"
+        elif bids or asks:
+            status = "TRADING"
+        else:
+            status = "NO_BOOK"
+        raw["provider_status_code"] = provider_status
         return QuoteSnapshot(
-            code=str(data.get("f57") or clean).zfill(6),
+            code=response_code,
             name=str(data.get("f58") or "").strip(),
             exchange=exchange,
-            source="EastMoney.push2/AKShare-transport",
+            source=source,
             quote_at=quote_at,
             fetched_at=fetched_at,
             last_cents=last,
@@ -119,7 +216,7 @@ class EastMoneyQuoteProvider:
             status=status,
             bids=bids,
             asks=asks,
-            raw=data,
+            raw=raw,
         )
 
 

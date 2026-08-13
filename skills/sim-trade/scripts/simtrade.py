@@ -24,6 +24,7 @@ from simtrade_core.trading_calendar import TradingCalendar
 
 TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_DB = SCRIPT_DIR.parent / "data" / "simulation.db"
+REQUIREMENTS_FILE = SCRIPT_DIR.parent / "requirements.txt"
 
 
 def _account_arg(parser: argparse.ArgumentParser) -> None:
@@ -102,12 +103,25 @@ def _doctor(db_path: str, code: str) -> dict[str, Any]:
     service, quotes, calendar = _components(db_path)
     checks.append({"name": "sqlite_database", "passed": True, "path": str(service.database.path)})
     versions: dict[str, str] = {}
-    for package in ("akshare", "pandas", "requests", "curl_cffi"):
+    expected_versions = {
+        name.strip(): version.strip()
+        for line in REQUIREMENTS_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#") and "==" in line
+        for name, version in [line.split("==", 1)]
+    }
+    for package in expected_versions:
         try:
             versions[package] = metadata.version(package)
         except metadata.PackageNotFoundError:
             versions[package] = "MISSING"
-    checks.append({"name": "pinned_dependencies_installed", "passed": all(value != "MISSING" for value in versions.values()), "versions": versions})
+    mismatches = {
+        package: {"expected": expected, "actual": versions[package]}
+        for package, expected in expected_versions.items()
+        if versions[package] != expected
+    }
+    checks.append({"name": "pinned_dependencies_installed", "passed": not mismatches,
+                   "versions": versions, "expected_versions": expected_versions,
+                   "mismatches": mismatches})
     current = datetime.now(TZ)
     try:
         is_open_day = calendar.is_trading_day(current.date())

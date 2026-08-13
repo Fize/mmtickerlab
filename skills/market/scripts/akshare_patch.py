@@ -185,7 +185,7 @@ def get_single_stock_realtime(code: str) -> dict:
         symbol = f"sh{clean}"
     elif clean.startswith(('00', '30')):
         symbol = f"sz{clean}"
-    elif clean.startswith(('8', '4')):
+    elif clean.startswith(('8', '4', '9')):
         symbol = f"bj{clean}"
     else:
         raise ValueError(f"Unknown exchange for stock code: {code}")
@@ -274,7 +274,7 @@ def get_multi_stocks_realtime(codes: list) -> dict:
             symbol = f"sh{clean}"
         elif clean.startswith(('00', '30')):
             symbol = f"sz{clean}"
-        elif clean.startswith(('8', '4')):
+        elif clean.startswith(('8', '4', '9')):
             symbol = f"bj{clean}"
         else:
             continue

@@ -757,18 +757,6 @@ def quote_dataset(target: date, code_value: str) -> dict[str, Any]:
         raise DataError("Realtime quotes are only valid for the current date")
     info = akshare_patch.get_single_stock_realtime(code)
     source = "Sina direct quote"
-    if not info:
-        frame = ak_call(ak.stock_zh_a_spot)
-        frame["plain_code"] = frame["代码"].astype(str).str[-6:]
-        selected = frame[frame["plain_code"] == code]
-        if selected.empty:
-            raise DataError(f"No realtime quote for {code}")
-        row = selected.iloc[0]
-        info = {"name": row.get("名称"), "price": row.get("最新价"), "change_pct": row.get("涨跌幅"),
-                "change": row.get("涨跌额"), "open": row.get("今开"), "pre_close": row.get("昨收"),
-                "high": row.get("最高"), "low": row.get("最低"), "volume": row.get("成交量"),
-                "turnover": row.get("成交额"), "quote_timestamp": row.get("时间戳")}
-        source = "AKShare.stock_zh_a_spot"
     data = {"security_code": code, "exchange": exchange_for(code), "name": info.get("name"),
             "last": number(info.get("price")), "change_pct": rounded_number(info.get("change_pct"), 6),
             "change": rounded_number(info.get("change")), "open": number(info.get("open")),

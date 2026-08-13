@@ -60,6 +60,8 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py captu
 - 已结束交易日的美股指数，以及采集时点的 A50、美元人民币；
 - 自选股历史（仅在用户配置自选股时必需）。
 
+自选股未配置时正常忽略；部分标的可用时数据包返回 warning；全部不可用时阻断盘前报告。
+
 ```bash
 skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
 ```

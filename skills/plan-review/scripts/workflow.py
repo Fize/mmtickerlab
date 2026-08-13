@@ -222,12 +222,35 @@ def _validated_report(day: str, phase: str) -> Path:
 
 
 def prepare(day: str, phase: str) -> dict[str, Any]:
+    path = phase_dir(day) / f"{phase}_bundle.json"
+    marker = {
+        "schema_version": 1,
+        "kind": "report_bundle",
+        "date": day,
+        "phase": phase,
+        "status": "collecting",
+        "errors": [],
+        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    atomic_json(path, marker)
+    try:
+        return _prepare_ready(day, phase)
+    except Exception as exc:
+        marker["status"] = "blocked"
+        marker["errors"] = [str(exc)]
+        marker["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        atomic_json(path, marker)
+        raise
+
+
+def _prepare_ready(day: str, phase: str) -> dict[str, Any]:
     calendar = _calendar_for(day)
     if not calendar["data"]["is_trading_day"]:
         raise WorkflowError(f"{day} 不是交易日，不生成报告")
     previous = calendar["data"]["previous_trading_day"]
     datasets: dict[str, dict[str, Any]] = {"calendar": calendar}
     prerequisites: list[str] = []
+    warnings: list[str] = []
 
     if phase == "pre":
         _capture_manifest(previous, "close")
@@ -236,6 +259,16 @@ def prepare(day: str, phase: str) -> dict[str, Any]:
         datasets["previous_indices"] = _snapshot(previous, "index_history_close")
         datasets["overnight"] = market_call("overnight", day)
         datasets["watchlist"] = market_call("watchlist", previous, count=250)
+        watchlist_data = datasets["watchlist"]["data"]
+        if watchlist_data.get("configured"):
+            ready_count = int(watchlist_data.get("ready_count", 0))
+            unavailable_count = int(watchlist_data.get("unavailable_count", 0))
+            if ready_count == 0:
+                raise WorkflowError("Watchlist is configured but no security data is ready")
+            if unavailable_count:
+                warnings.append(
+                    f"Watchlist is partially available: {ready_count} ready, {unavailable_count} unavailable"
+                )
         recent = calendar["data"]["last_trading_days"][-6:-1]
         if len(recent) != 5:
             raise WorkflowError("无法确定前 5 个交易日")
@@ -285,6 +318,7 @@ def prepare(day: str, phase: str) -> dict[str, Any]:
         "status": "ready",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "prerequisites": prerequisites,
+        "warnings": warnings,
         "evidence": _evidence(datasets),
         "datasets": datasets,
         "template": str(SKILL_DIR / "templates" / TEMPLATE_NAME[phase]),

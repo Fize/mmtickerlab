@@ -18,6 +18,8 @@ A matching snapshot must contain:
 
 An empty ask book at the upper limit and an empty bid book at the lower limit are valid matching snapshots when the opposite side exists, but provide no executable liquidity on that side. After the close, a snapshot may have no book and remain valid for valuation; it is never valid for matching. A security without explicit price limits is unsupported rather than guessed.
 
+The East Money adapter requires provider status code `f292=2` for normal listing/trading eligibility and maps `f292=6` to `SUSPENDED`. Unknown values fail closed. A normal status without an executable book is `NO_BOOK`, not `TRADING`.
+
 Store every snapshot used to evaluate an order in SQLite, including the raw provider payload. Never replace missing values with the order price, cost, previous close, zero, or an adjusted historical close.
 
 ## Valuation snapshot
@@ -32,4 +34,4 @@ Use `AKShare.tool_trade_date_hist_sina` and persist the returned dates. A missin
 
 ## Provider implementation
 
-The live adapter uses East Money's five-level quote payload through a patched HTTP transport and uses AKShare for the official trading-date series. Import `akshare_patch` before importing `akshare` so retries and East Money TLS handling are active.
+The live adapter uses East Money for identity, listing date, explicit limits, and provider status. When East Money omits the order book for a normal security, it requires a Sina quote with the same code/name, previous close, a timestamp within 30 seconds, and a last-price difference no greater than the larger of CNY 0.05 or 0.5% of previous close before using its timestamp, last/pre-close, and five-level book. Any consistency mismatch or incomplete source fails closed. AKShare supplies the official trading-date series. Import `akshare_patch` before importing `akshare` so retries and East Money TLS handling are active.

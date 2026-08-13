@@ -37,3 +37,4 @@ audit [--account-id ID]
 - `REJECTED`: validation rejected the attempted order before funds or shares were frozen.
 
 All writes are SQLite transactions. Account archival requires an exact account ID, `--yes`, and no active orders.
+Batch `order process` reports `processed` and `failed` arrays plus their counts. A failure for one order does not hide or roll back orders processed earlier in the batch.

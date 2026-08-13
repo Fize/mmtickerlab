@@ -46,4 +46,6 @@ Use `--json` before the command when machine-readable output is required. Use `-
 - Enforce next-trading-day availability for bought shares. Do not use calendar-day rollover.
 - Never expose or recreate the removed JSON/CSV account format, old single-action scripts, `reset`, or `--force`.
 
+Batch `order process` returns successful orders and per-order failures separately. Treat a non-empty `failed` list as partial completion; previously processed orders remain committed.
+
 Read [references/data_contract.md](references/data_contract.md) when diagnosing quote failures or changing a provider. Read [references/trading_rules.md](references/trading_rules.md) before changing trading, settlement, price-limit, odd-lot, or fee behavior. Read [references/command_reference.md](references/command_reference.md) for commands and statuses.

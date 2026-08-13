@@ -556,19 +556,31 @@ class TradingService:
             self._release_order(connection, order, "CANCELLED", current)
         return self.get_order(order_id)
 
-    def _expire_due(self, connection: sqlite3.Connection, current: datetime, account_id: str | None = None) -> int:
-        condition = "AND account_id=?" if account_id else ""
+    def _expire_due(
+        self,
+        connection: sqlite3.Connection,
+        current: datetime,
+        *,
+        account_id: str | None = None,
+        order_id: str | None = None,
+    ) -> list[str]:
+        conditions = []
         params: list[Any] = [current.date().isoformat(), current.date().isoformat()]
         if account_id:
+            conditions.append("account_id=?")
             params.append(account_id)
+        if order_id:
+            conditions.append("id=?")
+            params.append(order_id)
+        scope = " AND " + " AND ".join(conditions) if conditions else ""
         rows = connection.execute(
             f"""SELECT * FROM orders WHERE status IN ('OPEN','PARTIALLY_FILLED')
-                AND (expires_on<? OR (expires_on=? AND ?)) {condition}""",
+                AND (expires_on<? OR (expires_on=? AND ?)){scope}""",
             (*params[:2], 1 if after_close(current) else 0, *params[2:]),
         ).fetchall()
         for order in rows:
             self._release_order(connection, order, "EXPIRED", current)
-        return len(rows)
+        return [order["id"] for order in rows]
 
     def process_orders(
         self,
@@ -576,39 +588,66 @@ class TradingService:
         order_id: str | None = None,
         account_id: str | None = None,
         now: datetime | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> Any:
         current = now or _now()
         with self.database.transaction() as connection:
-            self._expire_due(connection, current, account_id)
+            resolved_account_id = account_id
+            if order_id:
+                target = connection.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+                if target is None:
+                    raise NotFoundError(f"订单不存在：{order_id}")
+                if account_id and target["account_id"] != account_id:
+                    raise ConflictError(f"订单不属于指定账户：{order_id}")
+                expired = self._expire_due(connection, current, order_id=order_id)
+            else:
+                resolved_account_id = self._account_row(connection, account_id)["id"]
+                expired = self._expire_due(connection, current, account_id=resolved_account_id)
         if after_close(current):
-            return [self.get_order(order_id)] if order_id else self.list_orders(account_id=account_id)
+            if order_id:
+                return [self.get_order(order_id)]
+            orders = [self.get_order(item) for item in expired]
+            return {"processed": orders, "failed": [],
+                    "processed_count": len(orders), "failed_count": 0}
         self._assert_session(current)
         with self.database.connect() as connection:
             if order_id:
                 rows = connection.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchall()
             else:
-                account = self._account_row(connection, account_id)
                 rows = connection.execute(
                     "SELECT * FROM orders WHERE account_id=? AND status IN ('OPEN','PARTIALLY_FILLED') ORDER BY created_at,id",
-                    (account["id"],),
+                    (resolved_account_id,),
                 ).fetchall()
         if order_id and not rows:
             raise NotFoundError(f"订单不存在：{order_id}")
         processed: list[str] = []
+        failures: list[dict[str, Any]] = []
         for row in rows:
             if row["status"] not in ACTIVE_STATUSES:
                 processed.append(row["id"])
                 continue
-            quote = self.quotes.get_quote(row["code"])
-            validate_quote_for_matching(quote, row["code"], current)
-            with self.database.transaction() as connection:
-                fresh = connection.execute("SELECT * FROM orders WHERE id=?", (row["id"],)).fetchone()
-                if fresh["status"] not in ACTIVE_STATUSES:
-                    continue
-                snapshot_id = self._insert_snapshot(connection, quote, order_id=row["id"], purpose="REMATCH", current=current)
-                self._match_order(connection, row["id"], quote, snapshot_id, current)
-            processed.append(row["id"])
-        return [self.get_order(item) for item in processed]
+            try:
+                quote = self.quotes.get_quote(row["code"])
+                validate_quote_for_matching(quote, row["code"], current)
+                with self.database.transaction() as connection:
+                    fresh = connection.execute("SELECT * FROM orders WHERE id=?", (row["id"],)).fetchone()
+                    if fresh["status"] not in ACTIVE_STATUSES:
+                        continue
+                    snapshot_id = self._insert_snapshot(connection, quote, order_id=row["id"], purpose="REMATCH", current=current)
+                    self._match_order(connection, row["id"], quote, snapshot_id, current)
+                processed.append(row["id"])
+            except SimTradeError as exc:
+                if order_id:
+                    raise
+                failures.append({
+                    "order_id": row["id"],
+                    "code": row["code"],
+                    "error": {"code": exc.code, "message": str(exc), "details": exc.details},
+                })
+        orders = [self.get_order(item) for item in processed]
+        if order_id:
+            return orders
+        return {"processed": orders, "failed": failures,
+                "processed_count": len(orders), "failed_count": len(failures)}
 
     def get_order(self, order_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
