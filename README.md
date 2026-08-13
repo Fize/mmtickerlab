@@ -9,12 +9,14 @@
 - `market`：市场概览、涨跌排行、涨停池、资金流、个股行情、K 线、技术指标、财务数据与新闻。
 - `sim-trade`：带行情门禁、限价委托、部分成交、T+1 和 SQLite 审计账本的模拟交易。
 - `plan-review`：基于已校验快照生成盘前计划、盘中复盘和盘后复盘；数据不完整时停止生成。
+- `first-board-overnight`：基于可审计数据评估首板隔夜模拟策略，输出 BUY、WATCH、NO_TRADE 或数据阻断结论。
 
 各技能的完整命令和约束见对应的 `SKILL.md`：
 
 - [`skills/market/SKILL.md`](skills/market/SKILL.md)
 - [`skills/sim-trade/SKILL.md`](skills/sim-trade/SKILL.md)
 - [`skills/plan-review/SKILL.md`](skills/plan-review/SKILL.md)
+- [`skills/first-board-overnight/SKILL.md`](skills/first-board-overnight/SKILL.md)
 
 ## 环境初始化
 
@@ -51,6 +53,7 @@ python3 skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMM
 - `data/watchlist.json`：自选股列表。
 - `data/stock_names.json`：股票名称缓存。
 - `skills/market/data/`：行情缓存与报告快照。
+- `skills/market/data/market_raw.db`：可按标的和时间查询的原始行情、K 线及其他明细数据库。
 - `skills/sim-trade/data/simulation.db`：模拟交易账户、订单、成交与账本。
 - `skills/plan-review/data/YYYYMMDD/`：盘前、盘中和盘后数据包。
 - `report/`：生成的计划与复盘报告。
@@ -65,7 +68,7 @@ python3 skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMM
 
 ## Claude Code 注册
 
-`skills.json` 注册 `market`、`sim-trade` 和 `plan-review`。将它加入 Claude Code 配置，并把路径替换为本仓库的实际位置：
+`skills.json` 注册 `market`、`sim-trade`、`plan-review` 和 `first-board-overnight`。将它加入 Claude Code 配置，并把路径替换为本仓库的实际位置：
 
 ```json
 {

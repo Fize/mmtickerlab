@@ -27,10 +27,15 @@ import pandas as pd
 import requests
 
 import indicators
+from raw_store import RawStore
 
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "report_snapshots"
+RAW_DB = Path(os.environ.get(
+    "MMTICKERLAB_RAW_DB",
+    str(Path(__file__).resolve().parents[1] / "data" / "market_raw.db"),
+))
 SH_TZ = ZoneInfo("Asia/Shanghai")
 NY_TZ = ZoneInfo("America/New_York")
 INDEXES = {
@@ -61,6 +66,90 @@ def parse_day(value: str) -> date:
 
 def day_key(value: date) -> str:
     return value.strftime("%Y%m%d")
+
+
+def parse_moment(value: str | None, *, end_of_day: bool = False) -> datetime | None:
+    if not value:
+        return None
+    formats = ("%Y%m%dT%H%M%S", "%Y%m%dT%H%M", "%Y%m%d")
+    for format_value in formats:
+        try:
+            parsed = datetime.strptime(value, format_value)
+            if format_value == "%Y%m%d" and end_of_day:
+                parsed = parsed.replace(hour=23, minute=59, second=59)
+            return parsed.replace(tzinfo=SH_TZ)
+        except ValueError:
+            continue
+    try:
+        parsed = datetime.fromisoformat(value)
+        return parsed.replace(tzinfo=SH_TZ) if parsed.tzinfo is None else parsed.astimezone(SH_TZ)
+    except ValueError as exc:
+        raise DataError(f"时间必须为 YYYYMMDD、YYYYMMDDTHHMM[SS] 或 ISO 8601：{value}") from exc
+
+
+def bar_query_at(period: str, at: datetime | None) -> str | None:
+    if not at:
+        return None
+    if period in {"daily", "weekly", "monthly"} and at.time().replace(tzinfo=None) < time(15, 0):
+        previous = at.date() - timedelta(days=1)
+        return datetime.combine(previous, time.max, SH_TZ).isoformat()
+    return at.isoformat()
+
+
+def iso_event_time(value: Any, target: date) -> str:
+    if isinstance(value, str):
+        text = value.strip()
+        for time_format in ("%H:%M:%S", "%H%M%S"):
+            try:
+                parsed_time = datetime.strptime(text, time_format).time()
+                return datetime.combine(target, parsed_time, SH_TZ).isoformat()
+            except ValueError:
+                continue
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return datetime.combine(target, time.min, SH_TZ).isoformat()
+    moment = parsed.to_pydatetime()
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=SH_TZ)
+    return moment.astimezone(SH_TZ).isoformat()
+
+
+def raw_store() -> RawStore:
+    return RawStore(RAW_DB)
+
+
+def persist_observation_rows(
+    kind: str,
+    rows: list[dict[str, Any]],
+    target: date,
+    source: str,
+    *,
+    event_field: str | None = None,
+    key_fields: tuple[str, ...] = ("security_code",),
+) -> int:
+    observed_at = now_shanghai().isoformat(timespec="seconds")
+    normalized = []
+    for index, row in enumerate(rows):
+        key_parts = [str(row.get(field) or "") for field in key_fields]
+        item_key = "|".join(key_parts) or str(index)
+        event_value = row.get(event_field) if event_field else None
+        normalized.append({
+            "item_key": item_key,
+            "security_code": row.get("security_code"),
+            "event_time": iso_event_time(event_value, target) if event_value else observed_at,
+            "payload": row,
+        })
+    return raw_store().insert_observations(
+        kind, normalized, target_date=day_key(target), observed_at=observed_at, source=source,
+    )
+
+
+RAW_KINDS = {
+    "trading-calendar", "security-master", "index-bar", "market-quote", "stock-quote", "stock-bar",
+    "limit-up", "limit-break", "limit-down", "sector-flow", "large-trade",
+    "dragon-tiger", "dragon-tiger-institution", "chip", "sentiment",
+    "stock-flow", "financial", "news", "overnight",
+}
 
 
 def clean_number(value: Any) -> Any:
@@ -239,6 +328,11 @@ def calendar_dataset(target: date, count: int) -> dict[str, Any]:
     next_days = [item for item in days if item > target]
     is_trade = target in set(days)
     selected = prior[-count:]
+    calendar_rows = [{"trade_date": day_key(item), "is_trading_day": True} for item in days]
+    persist_observation_rows(
+        "trading-calendar", calendar_rows, target, "AKShare.tool_trade_date_hist_sina",
+        event_field="trade_date", key_fields=("trade_date",),
+    )
     payload = {
         "is_trading_day": is_trade,
         "previous_trading_day": day_key(previous[-1]) if previous else None,
@@ -313,7 +407,15 @@ def indices_dataset(target: date, count: int, session: str | None = None) -> dic
         if len(frame) < count:
             raise DataError(f"指数 {code} 仅有 {len(frame)} 条，要求 {count} 条")
         latest_dates.append(str(frame.iloc[-1]["date"]))
-        result[code] = {"name": name, "rows": records(frame)}
+        index_rows = [{"security_code": code, "name": name, **row} for row in records(frame)]
+        persist_observation_rows(
+            "index-bar", index_rows, target, "Eastmoney push2his fixed secid",
+            event_field="date", key_fields=("security_code", "date"),
+        )
+        result[code] = {"name": name, "rows": [
+            {key: value for key, value in row.items() if key not in {"security_code", "name"}}
+            for row in index_rows
+        ]}
     expected = target.isoformat()
     checks = [
         check("all_indices", len(result) == len(INDEXES),
@@ -398,6 +500,10 @@ def snapshot_dataset(target: date, session: str) -> dict[str, Any]:
             "turnover_rate_pct": number(row.get("换手率")),
             "quote_timestamp": clean_number(row.get("时间戳")),
         })
+    persist_observation_rows(
+        "market-quote", normalized_rows, target,
+        "AKShare.stock_zh_a_spot", event_field="quote_timestamp",
+    )
     ranking_frame = valid.assign(_change=pd.to_numeric(valid["涨跌幅"], errors="coerce"),
                                  _turnover=pd.to_numeric(valid["成交额"], errors="coerce"))
     def ranked(frame: pd.DataFrame) -> list[dict[str, Any]]:
@@ -520,6 +626,19 @@ def limits_dataset(target: date, session: str | None = None) -> dict[str, Any]:
     normalized_closed = limit_rows(closed)
     normalized_failed = limit_rows(failed)
     normalized_down = limit_rows(down)
+    limit_source = "AKShare.stock_zt_pool_em/zbgc_em/dtgc_em"
+    persist_observation_rows(
+        "limit-up", normalized_closed, target, limit_source,
+        event_field="last_sealed_at", key_fields=("security_code",),
+    )
+    persist_observation_rows(
+        "limit-break", normalized_failed, target, limit_source,
+        event_field="first_sealed_at", key_fields=("security_code",),
+    )
+    persist_observation_rows(
+        "limit-down", normalized_down, target, limit_source,
+        key_fields=("security_code",),
+    )
     payload = {
         "session": session,
         "metrics": metrics,
@@ -578,6 +697,11 @@ def flows_dataset(target: date, session: str) -> dict[str, Any]:
                     "leading_stock_change_pct": percent_number(row.get("领涨股-涨跌幅")),
                 } for _, row in frame.iterrows()]
             normalized = flow_rows(work)
+            persist_observation_rows(
+                "sector-flow", normalized, target,
+                "AKShare.stock_fund_flow_industry/concept (10jqka)",
+                key_fields=("sector_kind", "sector", "period_days"),
+            )
             key = f"{kind}_{period}d"
             result[key] = {
                 "amount_unit": "CNY",
@@ -625,9 +749,19 @@ def lhb_dataset(target: date) -> dict[str, Any]:
             "institution_sellers": int(number(row.get("卖方机构数")) or 0),
             "turnover_rate_pct": percent_number(row.get("换手率")),
         } for _, row in frame.iterrows()]
-    return envelope("dragon_tiger", target,
-                    "AKShare.stock_lhb_detail_em/stock_lhb_jgmmtj_em",
-                    {"detail": lhb_rows(detail), "institutions": lhb_rows(institutions)}, checks)
+    detail_rows = lhb_rows(detail)
+    institution_rows = lhb_rows(institutions)
+    source = "AKShare.stock_lhb_detail_em/stock_lhb_jgmmtj_em"
+    persist_observation_rows(
+        "dragon-tiger", detail_rows, target, source, event_field="date",
+        key_fields=("security_code", "reason"),
+    )
+    persist_observation_rows(
+        "dragon-tiger-institution", institution_rows, target, source, event_field="date",
+        key_fields=("security_code",),
+    )
+    return envelope("dragon_tiger", target, source,
+                    {"detail": detail_rows, "institutions": institution_rows}, checks)
 
 
 def _final_global_row(frame: pd.DataFrame, now: datetime) -> dict[str, Any]:
@@ -678,6 +812,15 @@ def overnight_dataset(target: date) -> dict[str, Any]:
         check("a50", not a50.empty, f"A50 匹配 {len(a50)} 条"),
         check("usd_cny", not usd_cny.empty, f"美元人民币匹配 {len(usd_cny)} 条"),
     ]
+    overnight_rows = []
+    for symbol, value in global_rows.items():
+        overnight_rows.append({"instrument": symbol, **value})
+    overnight_rows.extend({"instrument": "A50", **row} for row in records(a50))
+    overnight_rows.extend({"instrument": "USD_CNY", **row} for row in records(usd_cny))
+    persist_observation_rows(
+        "overnight", overnight_rows, target,
+        "AKShare global index/futures/fx APIs", key_fields=("instrument",),
+    )
     return envelope("overnight_markets", target,
                     "AKShare.index_global_hist_em/futures_global_spot_em/fx_spot_quote",
                     {"global_indices": global_rows,
@@ -697,6 +840,10 @@ def security_master_dataset(target: date) -> dict[str, Any]:
         exchange, security_type = exchange_and_type(code)
         rows.append({"security_code": code, "name": str(row["name"]), "exchange": exchange,
                      "security_type": security_type, "listing_status": "listed"})
+    persist_observation_rows(
+        "security-master", rows, target, "AKShare.stock_info_a_code_name",
+        key_fields=("security_code",),
+    )
     return envelope("security_master", target, "AKShare.stock_info_a_code_name",
                     {"rows": rows}, [check("unique_codes", len({row["security_code"] for row in rows}) == len(rows),
                                                    f"Loaded {len(rows)} securities")])
@@ -726,6 +873,10 @@ def big_deals_dataset(target: date) -> dict[str, Any]:
         "side": clean_number(row.get("大单性质")),
         "change_pct": percent_number(row.get("涨跌幅")),
     } for _, row in frame.iterrows()]
+    persist_observation_rows(
+        "large-trade", rows, target, "AKShare.stock_fund_flow_big_deal",
+        event_field="trade_time", key_fields=("security_code", "trade_time", "price", "amount_yuan"),
+    )
     side_counts: dict[str, int] = {}
     for row in rows:
         side = str(row["side"] or "unknown")
@@ -764,6 +915,10 @@ def quote_dataset(target: date, code_value: str) -> dict[str, Any]:
             "low": number(info.get("low")), "volume": number(info.get("volume")),
             "turnover_yuan": number(info.get("turnover")),
             "quote_timestamp": clean_number(info.get("quote_timestamp"))}
+    persist_observation_rows(
+        "stock-quote", [data], target, source,
+        event_field="quote_timestamp", key_fields=("security_code",),
+    )
     quote_time = quote_timestamps(pd.Series([data["quote_timestamp"]]), target).iloc[0]
     quote_date_ok = not pd.isna(quote_time) and quote_time.date() == target
     fresh = False
@@ -791,59 +946,175 @@ def quote_dataset(target: date, code_value: str) -> dict[str, Any]:
                      check("quote_freshness", fresh, freshness_detail)])
 
 
-def _kline_frame(code: str, target: date, period: str, count: int, adjust: str) -> pd.DataFrame:
-    start = target - timedelta(days=max(count * 5, 500))
+def _kline_frame(
+    code: str,
+    target: date,
+    period: str,
+    count: int,
+    adjust: str,
+    at: datetime | None = None,
+) -> pd.DataFrame:
+    history_multiplier = {"daily": 5, "weekly": 10, "monthly": 40}.get(period, 5)
+    start = target - timedelta(days=max(count * history_multiplier, 500))
     if period in {"30", "60", "120"}:
         frame = ak_call(ak.stock_zh_a_hist_min_em, symbol=code, period=period, adjust=adjust)
+        frame.attrs["market_source"] = "AKShare.stock_zh_a_hist_min_em"
         date_col = "时间"
         timestamps = pd.to_datetime(frame.get(date_col), errors="coerce")
-        frame = frame[timestamps.dt.date <= target]
+        upper = at.replace(tzinfo=None) if at else datetime.combine(target, time.max)
+        frame = frame[timestamps <= upper]
     else:
-        frame = ak_call(ak.stock_zh_a_hist, symbol=code, period=period, adjust=adjust,
-                        start_date=day_key(start), end_date=day_key(target))
+        effective_target = target
+        if at and at.date() == target and at.time().replace(tzinfo=None) < time(15, 0):
+            effective_target = target - timedelta(days=1)
+        try:
+            frame = ak_call(ak.stock_zh_a_hist, symbol=code, period=period, adjust=adjust,
+                            start_date=day_key(start), end_date=day_key(effective_target))
+            frame.attrs["market_source"] = "AKShare.stock_zh_a_hist (Eastmoney)"
+        except Exception:
+            symbol = f"{exchange_for(code)}{code}"
+            daily = ak_call(
+                ak.stock_zh_a_daily, symbol=symbol, start_date=day_key(start),
+                end_date=day_key(effective_target), adjust=adjust,
+            )
+            if daily.empty:
+                raise DataError(f"No daily K-line data for {code} from fallback provider")
+            daily = daily.copy()
+            daily["date"] = pd.to_datetime(daily["date"], errors="coerce")
+            daily = daily.dropna(subset=["date"]).set_index("date").sort_index()
+            if period in {"weekly", "monthly"}:
+                rule = "W-FRI" if period == "weekly" else "ME"
+                daily = daily.resample(rule).agg({
+                    "open": "first", "high": "max", "low": "min", "close": "last",
+                    "volume": "sum", "amount": "sum", "turnover": "sum",
+                }).dropna(subset=["open", "close"])
+            daily = daily.reset_index()
+            previous_close = daily["close"].shift(1)
+            daily["change_pct"] = (daily["close"] / previous_close - 1) * 100
+            daily["amplitude_pct"] = (daily["high"] - daily["low"]) / previous_close * 100
+            daily["turnover_pct"] = daily["turnover"] * 100
+            frame = daily.rename(columns={
+                "date": "日期", "open": "开盘", "high": "最高", "low": "最低",
+                "close": "收盘", "volume": "成交量", "amount": "成交额",
+                "change_pct": "涨跌幅", "amplitude_pct": "振幅", "turnover_pct": "换手率",
+            })
+            frame.attrs["market_source"] = "AKShare.stock_zh_a_daily (Sina fallback)"
         date_col = "日期"
     if frame.empty or date_col not in frame.columns:
         raise DataError(f"No {period} K-line data for {code}")
     return frame.tail(count).copy()
 
 
-def kline_dataset(target: date, code_value: str, period: str, count: int, adjust: str) -> dict[str, Any]:
-    code = stock_code(code_value)
-    frame = _kline_frame(code, target, period, count, adjust)
+def normalized_bar_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
     date_col = "时间" if "时间" in frame.columns else "日期"
-    rows = [{"timestamp": clean_number(row.get(date_col)), "open": number(row.get("开盘")),
+    return [{"timestamp": clean_number(row.get(date_col)), "open": number(row.get("开盘")),
              "high": number(row.get("最高")), "low": number(row.get("最低")),
              "close": number(row.get("收盘")), "volume": number(row.get("成交量")),
              "turnover_yuan": number(row.get("成交额")), "amplitude_pct": number(row.get("振幅")),
              "change_pct": number(row.get("涨跌幅")), "turnover_rate_pct": number(row.get("换手率"))}
             for _, row in frame.iterrows()]
+
+
+def persist_bars(
+    code: str,
+    period: str,
+    rows: list[dict[str, Any]],
+    adjust: str,
+    source: str = "AKShare stock history",
+) -> int:
+    normalized = [{**row, "timestamp": iso_event_time(row.get("timestamp"), now_shanghai().date())}
+                  for row in rows]
+    return raw_store().insert_bars(
+        code, period, normalized, adjust=adjust, source=source,
+        observed_at=now_shanghai().isoformat(timespec="seconds"),
+    )
+
+
+def kline_dataset(
+    target: date,
+    code_value: str,
+    period: str,
+    count: int,
+    adjust: str,
+    at: datetime | None = None,
+) -> dict[str, Any]:
+    code = stock_code(code_value)
+    frame = _kline_frame(code, target, period, count, adjust, at)
+    source = frame.attrs.get("market_source", "AKShare stock history")
+    date_col = "时间" if "时间" in frame.columns else "日期"
+    rows = normalized_bar_rows(frame)
+    persist_bars(code, period, rows, adjust, source)
     actual_latest = pd.to_datetime(frame.iloc[-1][date_col], errors="coerce")
     latest_ok = not pd.isna(actual_latest) and actual_latest.date() <= target
-    return envelope("stock_kline", target, "AKShare stock history",
+    return envelope("stock_kline", target, source,
                     {"security_code": code, "period": period, "adjust": adjust,
+                     "requested_at": at.isoformat() if at else None,
                      "actual_latest_timestamp": clean_number(actual_latest), "rows": rows},
                     [check("rows", len(rows) == count, f"Requested {count}, loaded {len(rows)}"),
                      check("latest_not_after_target", latest_ok, f"Latest {actual_latest}, target {target}")])
 
 
-def technical_dataset(target: date, code_value: str, count: int, adjust: str) -> dict[str, Any]:
+def technical_dataset(
+    target: date,
+    code_value: str,
+    count: int,
+    adjust: str,
+    period: str = "daily",
+    at: datetime | None = None,
+    indicator_names: list[str] | None = None,
+) -> dict[str, Any]:
     code = stock_code(code_value)
-    frame = _kline_frame(code, target, "daily", max(260, count), adjust)
-    if len(frame) < 250:
-        raise DataError(f"Technical indicators require 250 rows; loaded {len(frame)}")
-    renamed = frame.rename(columns={"日期": "Date", "开盘": "Open", "最高": "High",
-                                    "最低": "Low", "收盘": "Close", "成交量": "Volume"})
+    effective_at = at
+    if not effective_at:
+        effective_at = (now_shanghai() if target == now_shanghai().date() else
+                        datetime.combine(target, time.max, SH_TZ))
+    stored = raw_store().query_bars(
+        code, period, adjust=adjust, at=bar_query_at(period, effective_at), limit=max(260, count),
+    )
+    data_basis = "raw_store"
+    if len(stored) >= 250:
+        normalized_rows = stored
+    else:
+        frame = _kline_frame(code, target, period, max(260, count), adjust, effective_at)
+        acquisition_source = frame.attrs.get("market_source", "AKShare stock history")
+        normalized_rows = normalized_bar_rows(frame)
+        persist_bars(code, period, normalized_rows, adjust, acquisition_source)
+        data_basis = "provider"
+    if len(normalized_rows) < 250:
+        raise DataError(f"Technical indicators require 250 rows; loaded {len(normalized_rows)}")
+    normalized_rows = normalized_rows[-max(260, count):]
+    renamed = pd.DataFrame(normalized_rows).rename(columns={
+        "timestamp": "Date", "open": "Open", "high": "High", "low": "Low",
+        "close": "Close", "volume": "Volume",
+    })
     calculated = indicators.calculate_all_indicators(renamed).tail(count)
     columns = ["Date", "Open", "High", "Low", "Close", "Volume",
                "SMA_5", "SMA_10", "SMA_20", "SMA_30", "SMA_60", "SMA_120", "SMA_250",
                "EMA_5", "EMA_10", "EMA_20", "DIF", "DEA", "MACD", "RSI_6", "RSI_12",
                "RSI_24", "BOLL_MID", "BOLL_UP", "BOLL_LB", "KDJ_K", "KDJ_D", "KDJ_J",
                "ATR", "CCI", "WR", "VWMA", "MFI"]
-    return envelope("stock_technical", target, "AKShare.stock_zh_a_hist + deterministic indicators",
-                    {"security_code": code, "adjust": adjust, "warmup_rows": len(frame),
-                     "actual_latest_date": clean_number(frame.iloc[-1]["日期"]),
-                     "rows": records(calculated[columns])},
-                    [check("warmup", len(frame) >= 250, f"Loaded {len(frame)} rows")])
+    available = [column for column in columns if column in calculated.columns]
+    if indicator_names:
+        unknown = sorted(set(indicator_names) - set(available))
+        if unknown:
+            raise DataError(f"Unsupported indicators: {unknown}")
+        selected_columns = [column for column in ("Date", "Open", "High", "Low", "Close", "Volume")
+                            if column in available]
+        selected_columns += [column for column in indicator_names if column not in selected_columns]
+    else:
+        selected_columns = available
+    return envelope("stock_technical", target, "AKShare stock history + deterministic indicators",
+                    {"security_code": code, "period": period, "adjust": adjust,
+                     "requested_at": at.isoformat() if at else None,
+                     "effective_cutoff": effective_at.isoformat(),
+                     "warmup_rows": len(normalized_rows),
+                     "data_basis": data_basis,
+                     "acquisition_source": acquisition_source if data_basis == "provider" else None,
+                     "actual_latest_timestamp": clean_number(normalized_rows[-1]["timestamp"]),
+                     "indicators": indicator_names or "all",
+                     "rows": records(calculated[selected_columns])},
+                    [check("warmup", len(normalized_rows) >= 250,
+                           f"Loaded {len(normalized_rows)} rows")])
 
 
 def chip_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
@@ -861,8 +1132,13 @@ def chip_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
     frame["日期"] = pd.to_datetime(frame["日期"], errors="coerce")
     frame = frame[frame["日期"].dt.date <= target]
     work = frame.tail(count).rename(columns=mapping)
+    rows = records(work[list(mapping.values())])
+    persist_observation_rows(
+        "chip", [{"security_code": code, **row} for row in rows], target,
+        "AKShare.stock_cyq_em", event_field="date", key_fields=("security_code",),
+    )
     return envelope("stock_chip_distribution", target, "AKShare.stock_cyq_em",
-                    {"security_code": code, "rows": records(work[list(mapping.values())])},
+                    {"security_code": code, "rows": rows},
                     [check("schema", not missing, f"Loaded {len(work)} rows"),
                      check("rows", not work.empty, f"Loaded {len(work)} rows on or before {target}")])
 
@@ -900,6 +1176,16 @@ def sentiment_dataset(target: date, code_value: str, count: int) -> dict[str, An
         present = {source: destination for source, destination in mappings[key].items() if source in work.columns}
         payload[key] = records(work.tail(count)[list(present)].rename(columns=present)) if present else []
     available = sum(bool(rows) for rows in payload.values())
+    raw_rows = []
+    for category, category_rows in payload.items():
+        if category == "source_errors":
+            continue
+        for row in category_rows:
+            raw_rows.append({"security_code": code, "category": category, **row})
+    persist_observation_rows(
+        "sentiment", raw_rows, target, "AKShare stock comment detail APIs",
+        event_field="date", key_fields=("security_code", "category"),
+    )
     return envelope("stock_sentiment", target, "AKShare stock comment detail APIs",
                     {"security_code": code, **payload, "source_errors": source_errors},
                     [check("available_sources", available > 0,
@@ -929,6 +1215,10 @@ def stock_flow_dataset(target: date, code_value: str, period: int) -> dict[str, 
             "turnover_yuan": amount_yuan(row.get("成交额")),
             "as_of": now.isoformat(timespec="seconds"),
             "freshness_basis": "current trading day and retrieval time; provider exposes no row timestamp"}
+    persist_observation_rows(
+        "stock-flow", [data], target, "AKShare.stock_fund_flow_individual",
+        event_field="as_of", key_fields=("security_code", "period_days"),
+    )
     return envelope("stock_fund_flow", target, "AKShare.stock_fund_flow_individual", data,
                     [trading_day_check,
                      check("identity", True, f"Loaded {period}-day flow for {code}"),
@@ -956,8 +1246,15 @@ def financial_dataset(target: date, code_value: str, statement: str, count: int)
         ).sort_values(sort_columns, ascending=False, na_position="last").index
         frame = frame.loc[ordering]
     selected = frame.head(count)
+    raw_financial_rows = records(selected)
+    persist_observation_rows(
+        "financial",
+        [{"security_code": code, "statement": statement, **row} for row in raw_financial_rows],
+        target, f"AKShare.{functions[statement].__name__}",
+        event_field="NOTICE_DATE", key_fields=("security_code", "statement", "REPORT_DATE"),
+    )
     full_document = envelope("stock_financials", target, f"AKShare.{functions[statement].__name__}",
-                             {"security_code": code, "statement": statement, "rows": records(selected)},
+                             {"security_code": code, "statement": statement, "rows": raw_financial_rows},
                              [check("rows", True, f"Loaded {len(selected)} statements")])
     reference = persist_document(DATA_DIR / day_key(target) / "stocks" / code / f"{statement}.json", full_document)
     common = ["REPORT_DATE", "REPORT_TYPE", "REPORT_DATE_NAME", "NOTICE_DATE", "CURRENCY"]
@@ -993,9 +1290,243 @@ def news_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
                      "url": clean_number(row.get("新闻链接"))})
         if len(rows) >= count:
             break
+    persist_observation_rows(
+        "news", [{"security_code": code, **row} for row in rows], target,
+        "AKShare.stock_news_em", event_field="published_at",
+        key_fields=("security_code", "published_at", "title"),
+    )
     return envelope("stock_news", target, "AKShare.stock_news_em",
                     {"security_code": code, "rows": rows},
                     [check("rows", bool(rows), f"Loaded {len(rows)} unique news items")])
+
+
+def fetch_current_market_quotes(target: date) -> int:
+    if target != now_shanghai().date():
+        raise DataError("Current full-market quotes cannot reconstruct an uncaptured historical time")
+    require_trading_day(target)
+    spot = ak_call(ak.stock_zh_a_spot)
+    required = {"代码", "名称", "最新价", "涨跌幅", "成交额", "时间戳"}
+    missing = sorted(required - set(spot.columns))
+    if missing:
+        raise DataError(f"全市场行情明细缺少字段：{missing}")
+    rows = []
+    for _, row in spot.iterrows():
+        code = str(row.get("代码", "")).replace("sh", "").replace("sz", "").replace("bj", "")
+        if len(code) != 6 or not code.isdigit():
+            continue
+        rows.append({
+            "security_code": code,
+            "name": clean_number(row.get("名称")),
+            "last": number(row.get("最新价")),
+            "pre_close": number(row.get("昨收")),
+            "open": number(row.get("今开")),
+            "high": number(row.get("最高")),
+            "low": number(row.get("最低")),
+            "change": number(row.get("涨跌额")),
+            "change_pct": number(row.get("涨跌幅")),
+            "volume": number(row.get("成交量")),
+            "turnover_yuan": number(row.get("成交额")),
+            "turnover_rate_pct": number(row.get("换手率")),
+            "quote_timestamp": clean_number(row.get("时间戳")),
+        })
+    if not rows:
+        raise DataError("No current full-market quote rows")
+    return persist_observation_rows(
+        "market-quote", rows, target, "AKShare.stock_zh_a_spot",
+        event_field="quote_timestamp", key_fields=("security_code",),
+    )
+
+
+def fetch_raw_kind(
+    kind: str,
+    target: date,
+    code: str | None,
+    period: str,
+    count: int,
+    adjust: str,
+    statement: str,
+    flow_period: int,
+    at: datetime | None,
+) -> None:
+    if kind == "security-master":
+        security_master_dataset(target)
+    elif kind == "trading-calendar":
+        calendar_dataset(target, max(count, 1))
+    elif kind == "index-bar":
+        indices_dataset(target, max(count, 1), None)
+    elif kind == "market-quote":
+        fetch_current_market_quotes(target)
+    elif kind == "stock-quote":
+        if not code:
+            raise DataError("stock-quote requires --code")
+        quote_dataset(target, code)
+    elif kind == "stock-bar":
+        if not code:
+            raise DataError("stock-bar requires --code")
+        frame = _kline_frame(code, target, period, max(count, 1), adjust, at)
+        persist_bars(
+            code, period, normalized_bar_rows(frame), adjust,
+            frame.attrs.get("market_source", "AKShare stock history"),
+        )
+    elif kind in {"limit-up", "limit-break", "limit-down"}:
+        limits_dataset(target, None)
+    elif kind == "sector-flow":
+        rows_before = raw_store().query_observations(kind, limit=1)
+        for sector_kind in ("industry", "concept"):
+            for period_days in (1, 3, 5):
+                frame = _flow_frame(sector_kind, period_days)
+                preferred = (["净额(万元)", "净额"] if period_days == 1 else
+                             [f"{period_days}日累计净额(万元)", f"{period_days}日累计净额"])
+                net_columns = [column for column in preferred if column in frame.columns]
+                if not net_columns:
+                    net_columns = [column for column in frame.columns if "净额" in str(column)]
+                if len(net_columns) != 1:
+                    raise DataError(
+                        f"{sector_kind}/{period_days}日资金流无法唯一识别净额字段：{list(frame.columns)}"
+                    )
+                net_column = net_columns[0]
+                rows = [{
+                    "sector": clean_number(row.get("行业")),
+                    "sector_kind": sector_kind,
+                    "period_days": period_days,
+                    "company_count": int(number(row.get("公司家数")) or 0),
+                    "index_value": number(row.get("行业指数")),
+                    "change_pct": percent_number(row.get("行业-涨跌幅", row.get("阶段涨跌幅"))),
+                    "inflow_yuan": provider_amount_yuan(row.get("流入资金"), "流入资金"),
+                    "outflow_yuan": provider_amount_yuan(row.get("流出资金"), "流出资金"),
+                    "net_flow_yuan": provider_amount_yuan(row.get(net_column), net_column),
+                    "leading_stock": clean_number(row.get("领涨股")),
+                    "leading_stock_change_pct": percent_number(row.get("领涨股-涨跌幅")),
+                } for _, row in frame.iterrows()]
+                persist_observation_rows(
+                    kind, rows, target, "AKShare stock fund-flow sector APIs",
+                    key_fields=("sector_kind", "sector", "period_days"),
+                )
+        if not rows_before and not raw_store().query_observations(kind, limit=1):
+            raise DataError("No sector flow detail rows")
+    elif kind == "large-trade":
+        big_deals_dataset(target)
+    elif kind in {"dragon-tiger", "dragon-tiger-institution"}:
+        lhb_dataset(target)
+    elif kind == "chip":
+        if not code:
+            raise DataError("chip requires --code")
+        chip_dataset(target, code, count)
+    elif kind == "sentiment":
+        if not code:
+            raise DataError("sentiment requires --code")
+        sentiment_dataset(target, code, count)
+    elif kind == "stock-flow":
+        if not code:
+            raise DataError("stock-flow requires --code")
+        stock_flow_dataset(target, code, flow_period)
+    elif kind == "financial":
+        if not code:
+            raise DataError("financial requires --code")
+        financial_dataset(target, code, statement, count)
+    elif kind == "news":
+        if not code:
+            raise DataError("news requires --code")
+        news_dataset(target, code, count)
+    elif kind == "overnight":
+        overnight_dataset(target)
+    else:
+        raise DataError(f"Unsupported raw kind: {kind}")
+
+
+def raw_dataset(
+    target: date,
+    kind: str,
+    code_value: str | None,
+    period: str,
+    count: int,
+    adjust: str,
+    statement: str,
+    flow_period: int,
+    start: datetime | None,
+    end: datetime | None,
+    at: datetime | None,
+) -> dict[str, Any]:
+    if kind not in RAW_KINDS:
+        raise DataError(f"Unsupported raw kind: {kind}")
+    code = stock_code(code_value) if code_value else None
+    start_value = start.isoformat() if start else None
+    end_value = end.isoformat() if end else None
+    at_value = at.isoformat() if at else None
+    default_end = datetime.combine(target, time.max, SH_TZ)
+    store = raw_store()
+
+    def select_requested_rows(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if kind == "financial":
+            values = [row for row in values if row.get("fields", {}).get("statement") == statement]
+        elif kind == "stock-flow":
+            values = [row for row in values
+                      if row.get("fields", {}).get("period_days") == flow_period]
+        return values[-count:]
+
+    if kind == "stock-bar":
+        if not code:
+            raise DataError("stock-bar requires --code")
+        bar_end_value = bar_query_at(period, at or end or default_end)
+        rows = store.query_bars(
+            code, period, adjust=adjust, start=start_value,
+            end=bar_end_value if not at else None,
+            at=bar_end_value if at else None, limit=count,
+        )
+    else:
+        query_limit = max(count, 1000) if kind in {"financial", "stock-flow"} else count
+        rows = select_requested_rows(store.query_observations(
+            kind, security_code=code, start=start_value,
+            end=end_value or (default_end.isoformat() if not at else None), at=at_value,
+            target_date=day_key(target) if not start and not end and not at else None,
+            limit=query_limit,
+        ))
+    storage_hit = bool(rows)
+
+    acquisition_error = None
+    if len(rows) < count and not (kind != "stock-bar" and rows and not start and not end and not at):
+        try:
+            fetch_raw_kind(kind, target, code, period, count, adjust, statement, flow_period, at)
+        except Exception as exc:
+            acquisition_error = str(exc)
+        if kind == "stock-bar":
+            bar_end_value = bar_query_at(period, at or end or default_end)
+            rows = store.query_bars(
+                code or "", period, adjust=adjust, start=start_value,
+                end=bar_end_value if not at else None,
+                at=bar_end_value if at else None, limit=count,
+            )
+        else:
+            rows = select_requested_rows(store.query_observations(
+                kind, security_code=code, start=start_value,
+                end=end_value or (default_end.isoformat() if not at else None), at=at_value,
+                target_date=day_key(target) if not start and not end and not at else None,
+                limit=query_limit,
+            ))
+    if not rows:
+        detail = f": {acquisition_error}" if acquisition_error else ""
+        raise DataError(f"No raw {kind} data available for the requested range{detail}")
+
+    return envelope(
+        "raw_market_data", target, "local immutable raw store + provider on cache miss",
+        {
+            "kind": kind,
+            "security_code": code,
+            "period": period if kind == "stock-bar" else None,
+            "adjust": adjust if kind == "stock-bar" else None,
+            "statement": statement if kind == "financial" else None,
+            "flow_period_days": flow_period if kind == "stock-flow" else None,
+            "from": start_value,
+            "to": end_value,
+            "at": at_value,
+            "storage_hit": storage_hit,
+            "coverage_status": "partial" if acquisition_error or len(rows) < count else "complete",
+            "acquisition_error": acquisition_error,
+            "row_count": len(rows),
+            "rows": rows,
+        },
+        [check("rows", bool(rows), f"Loaded {len(rows)} raw {kind} rows")],
+    )
 
 
 def watchlist_dataset(target: date, count: int) -> dict[str, Any]:
@@ -1083,7 +1614,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("dataset", choices=[
         "calendar", "master", "indices", "snapshot", "limits", "flows", "big-deals", "lhb",
         "overnight", "watchlist", "quote", "kline", "technical", "chips", "sentiment",
-        "stock-flow", "financials", "news",
+        "stock-flow", "financials", "news", "raw",
     ])
     parser.add_argument("--date", required=True, help="目标日期 YYYYMMDD")
     parser.add_argument("--count", type=int, default=60)
@@ -1094,6 +1625,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--flow-period", type=int, choices=[1, 3, 5, 10, 20], default=1)
     parser.add_argument("--adjust", choices=["", "qfq", "hfq"], default="qfq")
     parser.add_argument("--statement", choices=["income", "balance_sheet", "cashflow"], default="income")
+    parser.add_argument("--kind", choices=sorted(RAW_KINDS))
+    parser.add_argument("--from", dest="from_time", help="起始时间 YYYYMMDD[THHMMSS] 或 ISO 8601")
+    parser.add_argument("--to", dest="to_time", help="结束时间 YYYYMMDD[THHMMSS] 或 ISO 8601")
+    parser.add_argument("--at", help="只使用该时间点及以前的数据 YYYYMMDD[THHMMSS] 或 ISO 8601")
+    parser.add_argument("--indicator", help="逗号分隔的技术指标，例如 SMA_20,MACD,RSI_6")
     parser.add_argument("--output", help="可选 JSON 输出路径")
     return parser
 
@@ -1102,6 +1638,13 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         target = parse_day(args.date)
+        start = parse_moment(args.from_time)
+        end = parse_moment(args.to_time, end_of_day=True)
+        at = parse_moment(args.at, end_of_day=True)
+        if start and end and start > end:
+            raise DataError("--from must not be after --to")
+        if at and (start or end):
+            raise DataError("--at cannot be combined with --from or --to")
         if args.count <= 0:
             raise DataError("--count must be greater than zero")
         if target > now_shanghai().date() and args.dataset != "calendar":
@@ -1121,13 +1664,21 @@ def main() -> int:
             "overnight": lambda: overnight_dataset(target),
             "watchlist": lambda: watchlist_dataset(target, args.count),
             "quote": lambda: quote_dataset(target, args.code),
-            "kline": lambda: kline_dataset(target, args.code, args.period, args.count, args.adjust),
-            "technical": lambda: technical_dataset(target, args.code, args.count, args.adjust),
+            "kline": lambda: kline_dataset(target, args.code, args.period, args.count, args.adjust, at),
+            "technical": lambda: technical_dataset(
+                target, args.code, args.count, args.adjust, args.period, at,
+                [item.strip() for item in args.indicator.split(",") if item.strip()]
+                if args.indicator else None,
+            ),
             "chips": lambda: chip_dataset(target, args.code, args.count),
             "sentiment": lambda: sentiment_dataset(target, args.code, args.count),
             "stock-flow": lambda: stock_flow_dataset(target, args.code, args.flow_period),
             "financials": lambda: financial_dataset(target, args.code, args.statement, args.count),
             "news": lambda: news_dataset(target, args.code, args.count),
+            "raw": lambda: raw_dataset(
+                target, args.kind or "", args.code, args.period, args.count, args.adjust,
+                args.statement, args.flow_period, start, end, at,
+            ),
         }
         write_json(builders[args.dataset](), args.output)
         return 0

@@ -46,7 +46,10 @@ def calculate_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
         avg_gain = gain.ewm(alpha=1/r_period, adjust=False).mean()
         avg_loss = loss.ewm(alpha=1/r_period, adjust=False).mean()
         rs = avg_gain / avg_loss.replace(0, np.nan)
-        df[f'RSI_{r_period}'] = 100 - (100 / (1 + rs)).fillna(100)
+        rsi = 100 - (100 / (1 + rs))
+        rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100)
+        rsi = rsi.mask((avg_gain == 0) & (avg_loss > 0), 0)
+        df[f'RSI_{r_period}'] = rsi.fillna(50)
         
     # 5. Bollinger Bands (BOLL)
     df['BOLL_MID'] = close.rolling(window=20).mean()

@@ -15,6 +15,8 @@ Market 只返回数据。以下组合说明 Agent 在不同问题中应获取哪
 | 个股情绪 | `sentiment`、`stock-flow` | `news`、`big-deals` | 不推断未披露资金身份 |
 | 自选股跟踪 | `watchlist` | 当日 `quote`、分钟 `kline` | 只处理配置中的标的 |
 | 数据故障诊断 | 对应数据集 JSON、stderr | `akshare_patch` 重试日志 | 不把接口失败解释为零记录 |
+| 原始明细查询 | `raw --kind`、标的和时间条件 | 对应供应商实时/历史接口 | 本地缺失时主动获取；不可回填时明确阻断 |
+| 指定时点指标 | `technical --period --at` | `--indicator` 选择字段 | 只使用目标时点以前已完成的 K 线 |
 
 ## Data Interpretation Boundaries
 
@@ -25,3 +27,4 @@ Market 只返回数据。以下组合说明 Agent 在不同问题中应获取哪
 - `news` 提供标题、正文、来源、时间和链接；催化剂解释由 Agent 完成。
 - `financials` 提供报表原始字段；增长质量和估值判断由 Agent 完成。
 - 大型快照的命令结果只携带紧凑视图；完整记录从 `data.raw.path` 按需读取。
+- `market_raw.db` 保存跨命令可查询的标准化原始明细；报告快照文件仍是对应阶段的原子审计证据。

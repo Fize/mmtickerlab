@@ -1,0 +1,4 @@
+interface:
+  display_name: "首板隔夜策略"
+  short_description: "用可审计行情评估首板隔夜模拟交易"
+  default_prompt: "使用首板隔夜策略评估当前市场和候选；缺少盘中证据时明确阻断，不要猜测或模拟成交。"

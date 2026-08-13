@@ -33,7 +33,7 @@ The market skill uses `skills/market/scripts/cache_db.py` and `skills/market/dat
 ## Data locations
 
 - **Root `data/`**: `watchlist.json` (editable list of stock codes to track), `stock_names.json` (global name lookup cache)
-- **Market data**: `skills/market/data/` (cache.db, saved reviews)
+- **Market data**: `skills/market/data/` (`cache.db`, immutable raw-detail `market_raw.db`, saved report snapshots)
 - **Sim-Trade data**: `skills/sim-trade/data/simulation.db` (accounts, orders, fills, lots, cash ledger, quote snapshots, trading calendar)
 - Working directory is the project root (where this file lives).
 
