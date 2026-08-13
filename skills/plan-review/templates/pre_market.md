@@ -28,9 +28,11 @@
 | 观察项 | 已验证事实 | 解释 | 证据 |
 |---|---|---|---|
 | 指数与成交额 | {{index_and_turnover}} | {{interpretation}} | {{evidence_id}} |
+| 指数多周期位置与风格差 | {{index_history_and_style}} | {{interpretation}} | {{evidence_id}} |
 | 市场宽度 | {{breadth}} | {{interpretation}} | {{evidence_id}} |
+| 涨跌幅分布与极端排行 | {{distribution_and_rankings}} | {{interpretation}} | {{evidence_id}} |
 | 涨跌停与炸板 | {{limit_activity}} | {{interpretation}} | {{evidence_id}} |
-| 行业/概念资金流 | {{fund_flows}} | {{interpretation}} | {{evidence_id}} |
+| 行业/概念 1/3/5 日资金流 | {{fund_flows}} | {{interpretation}} | {{evidence_id}} |
 
 ## 今日观察框架
 
@@ -44,7 +46,7 @@
 
 ### 自选股观察（可选）
 
-| 标的 | 历史位置与量价事实 | 今日观察条件 | 风险条件 | 证据 |
+| 标的 | K 线与技术指标事实 | 今日观察条件 | 风险条件 | 证据 |
 |---|---|---|---|---|
 | {{code_and_name}} | {{verified_history}} | {{observe}} | {{risk}} | {{evidence_id}} |
 

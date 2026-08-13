@@ -12,7 +12,7 @@ import pandas as pd
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
-SPEC = importlib.util.spec_from_file_location("strict_report_data", SCRIPT_DIR / "report_data.py")
+SPEC = importlib.util.spec_from_file_location("strict_market_data", SCRIPT_DIR / "market_data.py")
 report_data = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(report_data)

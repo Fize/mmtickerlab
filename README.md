@@ -1,73 +1,71 @@
-# mmtickerlab — A-Share Trading Assistant Skills
+# mmtickerlab
 
-A collection of Claude Code skills for analyzing the Chinese A-share market and running paper trading simulations. All data is sourced via [akshare](https://github.com/akfamily/akshare).
+面向 A 股研究与模拟交易的 Claude Code 技能集合。项目通过 Python 脚本调用 [AKShare](https://github.com/akfamily/akshare) 获取市场数据，并使用 `uv` 管理环境。
 
-## Project Structure
+这不是 Python 包或独立应用；所有命令都应在项目根目录运行。
 
-```
-mmtickerlab/
-├── README.md
-├── AGENTS.md                          # Project conventions & workflow
-├── skills.json                        # Claude Code skill registration
-├── pyproject.toml                     # Python root deps (akshare, pandas)
-├── uv.lock
-├── data/                              # Root runtime data (gitignored)
-│   ├── watchlist.json                 # User-managed stock watchlist
-│   ├── stock_names.json               # Auto-generated name cache
-│   └── cache.db                       # Root-level cache
-└── skills/
-    ├── market/                        # Market data & analysis skill
-    │   ├── SKILL.md                   # Usage reference for Claude
-    │   ├── requirements.txt           # Skill-specific deps
-    │   ├── scripts/
-    │   │   ├── akshare_patch.py       # TLS impersonation (curl_cffi) + retry
-    │   │   ├── cache_db.py           # SQLite caching with trading-session TTL
-    │   │   ├── overview.py           # Market overview (indices + breadth)
-    │   │   ├── ranking.py            # Top gainers / losers
-    │   │   ├── limit_up.py           # Limit-up pool
-    │   │   ├── fund_flow.py          # Concept/Industry/BigDeal cash flow
-    │   │   ├── stock_profile.py      # Deep-dive: realtime/kline/cyq/comment/
-    │   │   │                         #   fundflow/financials/technical
-    │   │   ├── indicators.py         # 20+ technical indicators
-    │   │   ├── news.py               # Stock news
-    │   │   └── save_review.py        # Save market review
-    │   ├── references/
-    │   │   └── scenarios.md          # Pre-market/Noon/Evening workflows
-    │   └── data/                     # Market cache DB (gitignored)
-    │
-    └── sim-trade/                    # A-share simulation trading skill
-        ├── SKILL.md                  # Usage reference for Claude
-        ├── requirements.txt          # Skill-specific deps
-        ├── scripts/
-        │   ├── simtrade.py           # Unified account/order/portfolio/audit CLI
-        │   ├── akshare_patch.py      # Retry + East Money TLS handling
-        │   └── simtrade_core/        # Data gate, SQLite ledger, rules, matching
-        ├── references/
-        │   ├── data_contract.md      # Required quote/calendar evidence
-        │   ├── trading_rules.md      # Versioned market and fee rules
-        │   └── command_reference.md  # Commands and order statuses
-        ├── tests/                    # Isolated database and live read-only tests
-        └── data/                     # Simulation data (gitignored)
-            └── simulation.db         # Accounts, orders, fills, lots and ledgers
-```
+## 技能
 
-## Setup
+- `market`：市场概览、涨跌排行、涨停池、资金流、个股行情、K 线、技术指标、财务数据与新闻。
+- `sim-trade`：带行情门禁、限价委托、部分成交、T+1 和 SQLite 审计账本的模拟交易。
+- `plan-review`：基于已校验快照生成盘前计划、盘中复盘和盘后复盘；数据不完整时停止生成。
 
-This project uses **uv** for Python dependency management. Each skill manages its own virtualenv and dependencies.
+各技能的完整命令和约束见对应的 `SKILL.md`：
+
+- [`skills/market/SKILL.md`](skills/market/SKILL.md)
+- [`skills/sim-trade/SKILL.md`](skills/sim-trade/SKILL.md)
+- [`skills/plan-review/SKILL.md`](skills/plan-review/SKILL.md)
+
+## 环境初始化
+
+项目使用 `uv`，`market` 和 `sim-trade` 分别维护自己的虚拟环境与依赖：
 
 ```bash
-# Init market skill venv
 uv venv skills/market/.venv
 uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 
-# Init sim-trade skill venv
 uv venv skills/sim-trade/.venv
 uv pip install --python skills/sim-trade/.venv -r skills/sim-trade/requirements.txt
 ```
 
-## Register Skills with Claude Code
+`plan-review` 工作流本身只依赖 Python 标准库，采集数据时会调用 `market` 的环境。
 
-Add this project's `skills.json` to your Claude Code config:
+## 使用示例
+
+```bash
+# 市场收盘数据
+skills/market/.venv/bin/python skills/market/scripts/market_data.py snapshot --date YYYYMMDD --session close
+
+# 个股技术指标数据
+skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code 600519 --count 10
+
+# 查看模拟账户持仓
+skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/simtrade.py portfolio
+
+# 准备盘前报告数据包
+python3 skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
+```
+
+## 数据目录
+
+- `data/watchlist.json`：自选股列表。
+- `data/stock_names.json`：股票名称缓存。
+- `skills/market/data/`：行情缓存与报告快照。
+- `skills/sim-trade/data/simulation.db`：模拟交易账户、订单、成交与账本。
+- `skills/plan-review/data/YYYYMMDD/`：盘前、盘中和盘后数据包。
+- `report/`：生成的计划与复盘报告。
+
+## 关键约束
+
+- Market 只输出 JSON 数据，不生成市场结论、报告或交易建议。
+- 每个数据提供模块都必须先导入 `akshare_patch`，再导入 AKShare。
+- 东方财富接口由 `akshare_patch.py` 通过 `curl_cffi` 和重试机制处理 TLS 限制。
+- 模拟交易没有 `--force`：行情、交易日历或五档盘口不完整时，不会撮合订单。
+- 复盘报告必须通过 `capture`、`prepare` 和 `validate` 数据门禁，不能用当前数据回填历史快照。
+
+## Claude Code 注册
+
+`skills.json` 注册 `market`、`sim-trade` 和 `plan-review`。将它加入 Claude Code 配置，并把路径替换为本仓库的实际位置：
 
 ```json
 {
@@ -76,62 +74,3 @@ Add this project's `skills.json` to your Claude Code config:
   ]
 }
 ```
-
-## Available Tools
-
-### 行情数据 (Market Data)
-| Tool | Script | akshare API |
-|---|---|---|
-| K线数据 | `stock_profile.py --mode kline` | `stock_zh_a_hist()`, `stock_zh_a_hist_min_em()` |
-| 实时行情-东财 | `stock_profile.py --mode realtime --source eastmoney` | `stock_zh_a_spot_em()` |
-| 实时行情-新浪 | `stock_profile.py --mode realtime --source sina` | Direct Sina API / `stock_zh_a_spot()` |
-| 实时行情-雪球 | `stock_profile.py --mode realtime --source xueqiu` | `stock_individual_spot_xq()` |
-| 财务报表 | `stock_profile.py --mode financials` | `stock_*_sheet_by_report_em()` (×3) |
-| 新闻资讯 | `news.py` | `stock_news_em()` |
-
-### 技术分析 (Technical Analysis)
-| Tool | Script | Details |
-|---|---|---|
-| 技术指标 | `stock_profile.py --mode technical` | 20+ indicators: SMA/EMA/MACD/RSI/KDJ/BOLL/ATR/CCI/WR/VWMA/MFI |
-| 筹码分布 | `stock_profile.py --mode cyq` | `stock_cyq_em()` |
-
-### 市场分析 (Market Analysis)
-| Tool | Script | akshare API |
-|---|---|---|
-| 涨停股票 | `limit_up.py` | `stock_zt_pool_em()` |
-| 千股千评(评分) | `stock_profile.py --mode comment` | `stock_comment_detail_zhpj_lspf_em()` |
-| 关注指数 | (同上) | `stock_comment_detail_scrd_focus_em()` |
-| 参与意愿 | (同上) | `stock_comment_detail_scrd_desire_em()` |
-| 机构参与度 | (同上) | `stock_comment_detail_zlkp_jgcyd_em()` |
-
-### 资金流向 (Fund Flow)
-| Tool | Script | akshare API |
-|---|---|---|
-| 个股资金流 | `stock_profile.py --mode fundflow` | `stock_fund_flow_individual()` |
-| 概念板块资金流 | `fund_flow.py --type concept` | `stock_fund_flow_concept()` |
-| 行业板块资金流 | `fund_flow.py --type industry` | `stock_fund_flow_industry()` |
-| 大单追踪 | `fund_flow.py --type bigdeal` | `stock_fund_flow_big_deal()` |
-
-### 模拟交易 (Simulation Trading)
-| Tool | Command | Rules |
-|---|---|---|
-| 数据健康检查 | `simtrade.py doctor --code 600519` | Calendar, quote contract, matching readiness |
-| 创建账户 | `simtrade.py account create --name NAME --cash 500000` | Append-only opening ledger |
-| 限价买卖 | `simtrade.py order buy\|sell CODE SHARES --price PRICE` | Strict session/data gates, visible-book fills |
-| 订单管理 | `simtrade.py order list\|show\|cancel\|process` | Partial fills, cancellation, DAY expiry |
-| 持仓和历史 | `simtrade.py portfolio`, `simtrade.py history` | T+1 lots, explicit unavailable valuations |
-| 账本审计 | `simtrade.py audit` | Cash, freezes, fills and position invariants |
-
-## East Money TLS Note
-
-The market and sim-trade skills route known East Money calls through `curl_cffi` with retries. If queries hang, verify the relevant skill-local environment contains `curl_cffi` and inspect provider diagnostics.
-
-## Key Rules (Sim-Trade)
-
-- **Data gate**: No complete, fresh quote and confirmed trading day means no order or fill
-- **T+1**: Purchased lots become sellable on the next confirmed trading day
-- **Matching**: Limit orders consume only visible five-level liquidity and may remain open or partially filled
-- **Lot/tick**: Buy multiples of 100, constrained odd-lot liquidation, ¥0.01 tick
-- **Hours**: Confirmed trading days, 09:30–11:30 and 13:00–15:00; no bypass
-- **Fees**: Configurable commission + 0.001% transfer fee both sides + 0.05% sell stamp tax
-- **Storage**: Transactional SQLite ledger; no JSON/CSV reset or compatibility path

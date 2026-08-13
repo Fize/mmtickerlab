@@ -22,16 +22,18 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[3]
 SKILL_DIR = Path(__file__).resolve().parents[1]
 MARKET_PYTHON = ROOT / "skills" / "market" / ".venv" / "bin" / "python"
-MARKET_SCRIPT = ROOT / "skills" / "market" / "scripts" / "report_data.py"
+MARKET_SCRIPT = ROOT / "skills" / "market" / "scripts" / "market_data.py"
 DATA_DIR = SKILL_DIR / "data"
 REPORT_DIR = ROOT / "report"
 
 PHASE_LABEL = {"pre": "盘前计划", "noon": "盘中复盘", "post": "盘后复盘"}
 TEMPLATE_NAME = {"pre": "pre_market.md", "noon": "intraday_review.md", "post": "post_market.md"}
 CAPTURE_DATASETS = {
-    "noon": {"market_snapshot_noon", "fund_flows_noon", "limit_activity", "index_history"},
-    "close": {"market_snapshot_close", "fund_flows_close", "limit_activity", "index_history", "dragon_tiger"},
+    "noon": {"market_snapshot_noon", "fund_flows_noon", "limit_activity_noon", "index_history_noon"},
+    "close": {"market_snapshot_close", "fund_flows_close", "limit_activity_close", "index_history_close"},
+    "lhb": {"dragon_tiger"},
 }
+OPTIONAL_CAPTURE_DATASETS = {"noon": {"large_trades"}, "close": set(), "lhb": set()}
 REQUIRED_HEADINGS = {
     "pre": ["## 数据状态", "## 隔夜与市场背景", "## 前一交易日结构", "## 今日观察框架", "## 风险与失效条件", "## 数据来源"],
     "noon": ["## 数据状态", "## 上午市场事实", "## 与盘前假设的对照", "## 结构变化", "## 下午观察框架", "## 数据来源"],
@@ -85,7 +87,12 @@ def market_call(dataset: str, day: str, **options: Any) -> dict[str, Any]:
         command.extend([f"--{key.replace('_', '-')}", str(value)])
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
     if result.returncode:
-        detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "未知错误"
+        detail = "未知错误"
+        try:
+            detail = json.loads(result.stdout).get("error", detail)
+        except json.JSONDecodeError:
+            if result.stderr.strip():
+                detail = result.stderr.strip().splitlines()[-1]
         raise WorkflowError(f"{dataset} 获取失败：{detail}")
     try:
         document = json.loads(result.stdout)
@@ -98,14 +105,10 @@ def market_call(dataset: str, day: str, **options: Any) -> dict[str, Any]:
 
 def capture(day: str, phase: str) -> dict[str, Any]:
     datasets: dict[str, dict[str, Any]] = {}
-    specs = [
-        ("snapshot", {"session": phase}),
-        ("flows", {"session": phase}),
-        ("limits", {}),
-        ("indices", {"count": 60}),
+    specs = [("lhb", {})] if phase == "lhb" else [
+        ("snapshot", {"session": phase}), ("flows", {"session": phase}),
+        ("limits", {"session": phase}), ("indices", {"count": 60, "session": phase}),
     ]
-    if phase == "close":
-        specs.append(("lhb", {}))
     collecting = {
         "schema_version": 1,
         "kind": "capture_manifest",
@@ -121,6 +124,7 @@ def capture(day: str, phase: str) -> dict[str, Any]:
     # network collection so interrupted or partial refreshes cannot be consumed.
     atomic_json(manifest_path, collecting)
     errors = []
+    warnings = []
     for name, options in specs:
         try:
             document = market_call(name, day, **options)
@@ -128,6 +132,12 @@ def capture(day: str, phase: str) -> dict[str, Any]:
             datasets[key] = document
         except WorkflowError as exc:
             errors.append(str(exc))
+    if phase == "noon":
+        try:
+            document = market_call("big-deals", day)
+            datasets[document["dataset"]] = document
+        except WorkflowError as exc:
+            warnings.append(str(exc))
     manifest = {
         "schema_version": 1,
         "kind": "capture_manifest",
@@ -136,16 +146,19 @@ def capture(day: str, phase: str) -> dict[str, Any]:
         "status": "blocked" if errors else "ready",
         "datasets": sorted(datasets),
         "errors": errors,
+        "warnings": warnings,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
     if errors:
         atomic_json(manifest_path, manifest)
         raise WorkflowError("；".join(errors))
     actual = set(datasets)
-    if actual != CAPTURE_DATASETS[phase]:
+    required = CAPTURE_DATASETS[phase]
+    allowed = required | OPTIONAL_CAPTURE_DATASETS[phase]
+    if not required <= actual or not actual <= allowed:
         manifest["status"] = "blocked"
         manifest["errors"] = [
-            f"数据集集合不匹配：要求 {sorted(CAPTURE_DATASETS[phase])}，取得 {sorted(actual)}"
+            f"数据集集合不匹配：必需 {sorted(required)}，可选 {sorted(OPTIONAL_CAPTURE_DATASETS[phase])}，取得 {sorted(actual)}"
         ]
         atomic_json(manifest_path, manifest)
         raise WorkflowError(manifest["errors"][0])
@@ -196,7 +209,8 @@ def _capture_manifest(day: str, phase: str) -> dict[str, Any]:
         raise WorkflowError(f"{day} {phase} capture manifest 身份不匹配")
     actual = set(manifest.get("datasets", []))
     required = CAPTURE_DATASETS[phase]
-    if actual != required:
+    allowed = required | OPTIONAL_CAPTURE_DATASETS[phase]
+    if not required <= actual or not actual <= allowed:
         raise WorkflowError(f"capture manifest 数据集不完整：要求 {sorted(required)}，取得 {sorted(actual)}")
     return manifest
 
@@ -219,21 +233,26 @@ def prepare(day: str, phase: str) -> dict[str, Any]:
         _capture_manifest(previous, "close")
         datasets["previous_close"] = _snapshot(previous, "market_snapshot_close")
         datasets["previous_flows"] = _snapshot(previous, "fund_flows_close")
-        datasets["previous_indices"] = _snapshot(previous, "index_history")
+        datasets["previous_indices"] = _snapshot(previous, "index_history_close")
         datasets["overnight"] = market_call("overnight", day)
-        datasets["watchlist"] = market_call("watchlist", previous, count=120)
+        datasets["watchlist"] = market_call("watchlist", previous, count=250)
         recent = calendar["data"]["last_trading_days"][-6:-1]
         if len(recent) != 5:
             raise WorkflowError("无法确定前 5 个交易日")
         for recent_day in recent:
-            datasets[f"limits_{recent_day}"] = market_call("limits", recent_day)
+            datasets[f"limits_{recent_day}"] = market_call("limits", recent_day, session="close")
     elif phase == "noon":
         prerequisites.append(str(_validated_report(day, "pre")))
-        _capture_manifest(day, "noon")
+        noon_capture = _capture_manifest(day, "noon")
         datasets["noon_snapshot"] = _snapshot(day, "market_snapshot_noon")
         datasets["noon_flows"] = _snapshot(day, "fund_flows_noon")
-        datasets["noon_limits"] = _snapshot(day, "limit_activity")
-        datasets["noon_indices"] = _snapshot(day, "index_history")
+        datasets["noon_limits"] = _snapshot(day, "limit_activity_noon")
+        datasets["noon_indices"] = _snapshot(day, "index_history_noon")
+        datasets["previous_close"] = _snapshot(previous, "market_snapshot_close")
+        datasets["previous_flows"] = _snapshot(previous, "fund_flows_close")
+        datasets["previous_indices"] = _snapshot(previous, "index_history_close")
+        if "large_trades" in noon_capture["datasets"]:
+            datasets["large_trades"] = _snapshot(day, "large_trades")
         pre_bundle = load_json(phase_dir(day) / "pre_bundle.json")
         datasets["pre_bundle_manifest"] = {
             "dataset": "pre_bundle_manifest", "target_date": day,
@@ -244,11 +263,17 @@ def prepare(day: str, phase: str) -> dict[str, Any]:
     else:
         prerequisites.extend([str(_validated_report(day, "pre")), str(_validated_report(day, "noon"))])
         _capture_manifest(day, "close")
+        _capture_manifest(day, "lhb")
         datasets["close_snapshot"] = _snapshot(day, "market_snapshot_close")
         datasets["close_flows"] = _snapshot(day, "fund_flows_close")
-        datasets["close_limits"] = _snapshot(day, "limit_activity")
-        datasets["close_indices"] = _snapshot(day, "index_history")
+        datasets["close_limits"] = _snapshot(day, "limit_activity_close")
+        datasets["close_indices"] = _snapshot(day, "index_history_close")
         datasets["dragon_tiger"] = _snapshot(day, "dragon_tiger")
+        _capture_manifest(day, "noon")
+        datasets["noon_snapshot"] = _snapshot(day, "market_snapshot_noon")
+        datasets["noon_flows"] = _snapshot(day, "fund_flows_noon")
+        datasets["noon_limits"] = _snapshot(day, "limit_activity_noon")
+        datasets["noon_indices"] = _snapshot(day, "index_history_noon")
 
     bundle_id = f"{day}-{phase}-{datetime.now().astimezone():%Y%m%dT%H%M%S%z}"
     bundle = {
@@ -311,9 +336,9 @@ def validate(day: str, phase: str, report_arg: str | None) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="盘前/盘中/盘后严格报告工作流")
     sub = parser.add_subparsers(dest="command", required=True)
-    capture_parser = sub.add_parser("capture", help="采集午间或收盘不可回溯快照")
+    capture_parser = sub.add_parser("capture", help="采集午间、收盘或龙虎榜不可回溯快照")
     capture_parser.add_argument("--date", required=True)
-    capture_parser.add_argument("--phase", choices=["noon", "close"], required=True)
+    capture_parser.add_argument("--phase", choices=["noon", "close", "lhb"], required=True)
     prepare_parser = sub.add_parser("prepare", help="严格组装报告数据包")
     prepare_parser.add_argument("--date", required=True)
     prepare_parser.add_argument("--phase", choices=["pre", "noon", "post"], required=True)

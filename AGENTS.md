@@ -18,7 +18,7 @@ This is **not a package or application**. It is a collection of Claude Code skil
 All scripts run from the **project root** with the skill's own python:
 
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/overview.py
+skills/market/.venv/bin/python skills/market/scripts/market_data.py snapshot --date YYYYMMDD --session close
 skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/simtrade.py portfolio
 ```
 
@@ -50,11 +50,11 @@ The market skill uses `skills/market/scripts/cache_db.py` and `skills/market/dat
 ## Plan & Review skill (plan-review)
 
 - **Purpose**: Strict pre-market, intraday, and post-market research reports backed by validated AKShare snapshots
-- **Workflow**: `skills/plan-review/scripts/workflow.py` (`capture`, `prepare`, `validate`)
+- **Workflow**: `skills/plan-review/scripts/workflow.py` (`capture`, `prepare`, `validate`); capture `close` after 15:05 and `lhb` separately after 16:30
 - **Bundles**: `skills/plan-review/data/YYYYMMDD/{pre,noon,post}_bundle.json`
 - **Reports**: `report/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md`
 - **Hard gate**: a missing, stale, incomplete, or schema-invalid required dataset blocks report creation
-- **No external deps in workflow**: it calls `skills/market/scripts/report_data.py` through the market venv
+- **No external deps in workflow**: it calls `skills/market/scripts/market_data.py` through the market venv
 
 This is a read-only process layer over `market` data. See `skills/plan-review/SKILL.md` for the full workflow.
 ## East Money TLS blocking (market only)

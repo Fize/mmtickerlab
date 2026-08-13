@@ -205,7 +205,7 @@ def get_single_stock_realtime(code: str) -> dict:
         raise ValueError(f"No data returned for stock code {code}")
         
     parts = data_str.split(",")
-    if len(parts) < 30:
+    if len(parts) < 32:
         raise ValueError("Incomplete data returned from Sina API")
         
     name = parts[0]
@@ -217,8 +217,8 @@ def get_single_stock_realtime(code: str) -> dict:
     volume = float(parts[8]) if parts[8] else 0.0
     turnover = float(parts[9]) if parts[9] else 0.0
     
-    change = current_p - pre_close
-    change_pct = (change / pre_close * 100) if pre_close > 0 else 0.0
+    change = round(current_p - pre_close, 4)
+    change_pct = round(change / pre_close * 100, 6) if pre_close > 0 else 0.0
     
     info = {
         "code": clean,
@@ -231,7 +231,8 @@ def get_single_stock_realtime(code: str) -> dict:
         "change": change,
         "change_pct": change_pct,
         "volume": volume,
-        "turnover": turnover
+        "turnover": turnover,
+        "quote_timestamp": f"{parts[30]}T{parts[31]}+08:00",
     }
     # Save to cache
     cache_db.set_cache(cache_key, info, "realtime")

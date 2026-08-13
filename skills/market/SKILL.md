@@ -1,116 +1,93 @@
 ---
 name: market
-description: Query A-share market overview, rankings, limit-up pools, concept/industry fund flows, individual stock profile (realtime, kline with multi-period, cyq cost distribution, institution comments, individual fund flow, financials), individual stock news, and save market reviews. A股市场行情查询与深度分析工具，支持大盘、个股走势、涨停板及资金流向。
+description: 获取经过日期、时效和完整性校验的 A 股市场与个股 JSON 数据。用于市场快照、指数、涨跌停、行业/概念资金流、龙虎榜、隔夜市场、自选股、个股行情、K 线、技术指标、筹码、情绪、个股资金、财务和新闻查询。只返回数据，不生成市场结论、报告或交易建议。
 ---
 
-# Market Skill
+# Market Data
 
-This skill provides utilities to query real-time and historical Chinese A-share market data, compile individual stock profiles, and save market reviews.
+本技能只负责采集、校验和输出数据。所有命令从项目根目录运行，stdout 只包含一个 JSON 文档；重试和供应商诊断写入 stderr。全市场快照、板块资金流、大单和完整财务报表落盘后返回紧凑视图与 `raw.path`，需要明细时按路径局部读取。不要根据数据在本技能内生成主线、周期、买卖或仓位结论。
 
-## Environment Setup
+## 环境
 
-Before using this skill, check if the local virtual environment `.venv` exists. If not, initialize it using `uv`:
 ```bash
-# Create the local virtual environment
 uv venv skills/market/.venv
-
-# Install required dependencies into the local virtual environment
 uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 ```
 
-## Usage Guidelines
-
-- Run all scripts from the project root using the skill's local virtual environment python: `skills/market/.venv/bin/python`.
-- All scripts output plain text, markdown tables, or JSON. No `rich` terminal library is used, making it easy for you to parse.
-
-## Script References
-
-### 0. Strict report datasets (`skills/market/scripts/report_data.py`)
-
-Machine-readable adapters used by `plan-review`. Each command emits a single JSON document, includes source/retrieval metadata and validation checks, and exits with code 2 instead of returning partial data when a required check fails.
+统一入口：
 
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/report_data.py calendar --date 20260812 --count 10
-skills/market/.venv/bin/python skills/market/scripts/report_data.py indices --date 20260812 --count 60
-skills/market/.venv/bin/python skills/market/scripts/report_data.py snapshot --date 20260812 --session close
-skills/market/.venv/bin/python skills/market/scripts/report_data.py flows --date 20260812 --session close
-skills/market/.venv/bin/python skills/market/scripts/report_data.py limits --date 20260812
-skills/market/.venv/bin/python skills/market/scripts/report_data.py lhb --date 20260812
-skills/market/.venv/bin/python skills/market/scripts/report_data.py overnight --date 20260813
+skills/market/.venv/bin/python skills/market/scripts/market_data.py DATASET --date YYYYMMDD
 ```
 
-`snapshot` and `flows` only accept the current trading date in the noon or close collection window. `lhb` only accepts the current date after 16:30. This intentionally prevents current values from being mislabeled as historical snapshots.
+任一命令返回非零状态时，读取错误并停止使用该数据，不把缺失数据解释为空数据。
 
-### 1. Market Overview (`skills/market/scripts/overview.py`)
-Show a broad overview of the A-share market (e.g., indices, general up/down stats).
+## 市场数据
+
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/overview.py
+# 交易日历与证券主表
+skills/market/.venv/bin/python skills/market/scripts/market_data.py calendar --date YYYYMMDD --count 10
+skills/market/.venv/bin/python skills/market/scripts/market_data.py master --date YYYYMMDD
+
+# 七个主要指数；午间行标记 intraday，收盘行标记 final
+skills/market/.venv/bin/python skills/market/scripts/market_data.py indices --date YYYYMMDD --session noon --count 60
+skills/market/.venv/bin/python skills/market/scripts/market_data.py indices --date YYYYMMDD --session close --count 60
+
+# 全市场明细、宽度、涨跌分布和同快照排行
+skills/market/.venv/bin/python skills/market/scripts/market_data.py snapshot --date YYYYMMDD --session noon
+skills/market/.venv/bin/python skills/market/scripts/market_data.py snapshot --date YYYYMMDD --session close
+
+# 涨停、炸板、跌停、连板梯队和行业分布
+skills/market/.venv/bin/python skills/market/scripts/market_data.py limits --date YYYYMMDD --session close
+
+# 行业/概念 1、3、5 日完整资金排行及流入/流出 Top 20
+skills/market/.venv/bin/python skills/market/scripts/market_data.py flows --date YYYYMMDD --session close
+
+# 当日大单、龙虎榜和隔夜市场
+skills/market/.venv/bin/python skills/market/scripts/market_data.py big-deals --date YYYYMMDD
+skills/market/.venv/bin/python skills/market/scripts/market_data.py lhb --date YYYYMMDD
+skills/market/.venv/bin/python skills/market/scripts/market_data.py overnight --date YYYYMMDD
 ```
 
-### 2. Market Ranking (`skills/market/scripts/ranking.py`)
-Show top gainer or loser stocks.
-- `--top N`: Number of stocks to list (default: 10)
-- `--type up|down`: Filter by gainers or losers (default: up)
+`snapshot`、`flows` 只能在当天午间 11:30-13:00 或收盘 15:05 后采集。龙虎榜只能在当天 16:30 后采集。`overnight`、实时行情和当前证券主表不能回填历史日期。分钟线按目标日期截断。
+
+## 个股数据
+
+需要个股代码的数据集必须传 `--code`：
+
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/ranking.py --top 15 --type down
+# 实时行情
+skills/market/.venv/bin/python skills/market/scripts/market_data.py quote --date YYYYMMDD --code 600519
+
+# 日、周、月和 30/60/120 分钟 K 线
+skills/market/.venv/bin/python skills/market/scripts/market_data.py kline --date YYYYMMDD --code 600519 --period daily --count 120 --adjust qfq
+
+# 纯技术指标数值，至少使用 250 行预热数据
+skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code 600519 --count 10 --adjust qfq
+
+# 筹码、情绪和多周期个股资金
+skills/market/.venv/bin/python skills/market/scripts/market_data.py chips --date YYYYMMDD --code 600519 --count 10
+skills/market/.venv/bin/python skills/market/scripts/market_data.py sentiment --date YYYYMMDD --code 600519 --count 10
+skills/market/.venv/bin/python skills/market/scripts/market_data.py stock-flow --date YYYYMMDD --code 600519 --flow-period 5
+
+# 财务报表与原始新闻
+skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code 600519 --statement income --count 4
+skills/market/.venv/bin/python skills/market/scripts/market_data.py news --date YYYYMMDD --code 600519 --count 10
 ```
 
-### 3. Limit-Up Pool (`skills/market/scripts/limit_up.py`)
-Show details of the limit-up pool.
-- `--date YYYYMMDD`: Limit-up pool date (default: today's date)
+技术指标只表示计算结果；筹码成本不是必然支撑位；资金流不代表可识别的机构身份；新闻保持原文数据，不在本技能内总结或解释。财务数据默认返回常用字段，完整报表位于 `raw.path`。
+
+## 自选股
+
+`data/watchlist.json` 可为代码数组或带 `stocks` 的对象。批量获取最多 250 日 K 线和最近技术指标：
+
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/limit_up.py --date 20260618
+skills/market/.venv/bin/python skills/market/scripts/market_data.py watchlist --date YYYYMMDD --count 250
 ```
 
-### 4. Fund Flow (`skills/market/scripts/fund_flow.py`)
-Analyze capital flows into concepts, industries, or big deals.
-- `--type concept|industry|bigdeal`: Cash flow sector type (default: concept)
-- `--period 1|3|5`: Period in days (1, 3, or 5 days) (default: 1)
-```bash
-skills/market/.venv/bin/python skills/market/scripts/fund_flow.py --type industry --period 5
-```
+未配置自选股时返回 `configured: false`，不是错误。
+已配置时每只股票独立返回 `ready`、`insufficient_history`、`stale`、`no_data` 或 `provider_error`，单只股票不会阻断其他标的。
 
-### 5. Individual Stock Profile (`skills/market/scripts/stock_profile.py`)
-Compile deep-dive information for a specific stock.
-- `<code-or-symbol>`: Stock code (6 digits, e.g., `600519`, `000001`)
-- `--mode realtime|kline|cyq|comment|fundflow|financials|technical`: Analysis mode (default: realtime). `technical` mode calculates and displays 20+ indicators (MACD, RSI, KDJ, BOLL, ATR, CCI, WR, VWMA, MFI, etc.).
-- `--period daily|weekly|monthly|yearly|30min|60min|120min`: Kline period (for `kline` mode, default: daily)
-- `--days N`: Show past N data points/days for time-series modes (default: 10)
-- `--type income|balance_sheet|cashflow`: Financial report type (for `financials` mode, default: income)
-- `--source auto|sina|eastmoney|xueqiu`: Specify the quote source for realtime mode (default: auto). Automatically falls back to Sina/Eastmoney if Xueqiu fails.
-- `--token TOKEN`: Manually pass a Xueqiu `xq_a_token` to authenticate Xueqiu queries if necessary.
-```bash
-skills/market/.venv/bin/python skills/market/scripts/stock_profile.py 600519 --mode kline --period weekly --days 20
-skills/market/.venv/bin/python skills/market/scripts/stock_profile.py 000001 --mode cyq --days 5
-skills/market/.venv/bin/python skills/market/scripts/stock_profile.py 600519 --mode technical --days 5
-skills/market/.venv/bin/python skills/market/scripts/stock_profile.py 600519 --mode realtime --source xueqiu --token "YOUR_TOKEN"
-```
+## 使用场景
 
-### 6. Stock News (`skills/market/scripts/news.py`)
-Fetch the latest news for a specific stock.
-- `<code>`: Stock code (6 digits)
-- `--n N`: Number of news items to fetch (default: 10)
-```bash
-skills/market/.venv/bin/python skills/market/scripts/news.py 600519 --n 5
-```
-
-### 7. Save Review (`skills/market/scripts/save_review.py`)
-Format and save a market review to the local directory `data/review/`.
-- `--type noon|evening`: Save noon review or evening review
-- Input markdown text is passed via standard input or typed as prompt.
-```bash
-skills/market/.venv/bin/python skills/market/scripts/save_review.py --type evening
-```
-
-## Recommended Workflow Scenarios
-
-For a step-by-step guideline of market scenarios (Pre-market, Noon, Evening, Stock Deep-dive), refer to [scenarios.md](references/scenarios.md).
-
-## Supplemental Data Sources (数据与新闻补充来源)
-
-When you are acting as an agent using this skill, you can consult the following websites as supplemental data and news sources to support your analysis:
-- **巨潮资讯网 (Cninfo)**: [https://www.cninfo.com.cn/new/index](https://www.cninfo.com.cn/new/index) - Official information disclosure platform for Chinese listed companies. Excellent for checking official stock announcements, prospectuses, and regular financial statements.
-- **同花顺财经 (10jqka)**: [https://www.10jqka.com.cn/](https://www.10jqka.com.cn/) - Real-time market terminal, industry rankings, heatmaps, and capital flows.
-- **东方财富 (Eastmoney)**: [https://www.eastmoney.com/default.html](https://www.eastmoney.com/default.html) - Individual stock profiles, financial databases, stock forums (guba), and historical charts.
-- **财联社 (CLS)**: [https://www.cls.cn/](https://www.cls.cn/) - Professional real-time financial news, flash news, and macro policy feeds.
-- **天天基金网 (Eastmoney Fund)**: [https://www.1234567.com.cn/](https://www.1234567.com.cn/) - Detailed fund holdings, net asset values, historical performance, and index trends.
+完整的数据组合和限制见 [references/scenarios.md](references/scenarios.md)。`plan-review` 负责组装盘前、盘中和盘后数据；最终分析与报告由 Agent 根据这些数据完成。

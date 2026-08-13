@@ -20,8 +20,10 @@
 |---|---|---|---|
 | 主要指数 | {{indices}} | {{change}} | {{evidence_id}} |
 | 成交额与市场宽度 | {{turnover_and_breadth}} | {{change}} | {{evidence_id}} |
+| 涨跌分布与异动排行 | {{distribution_and_rankings}} | {{change}} | {{evidence_id}} |
 | 涨跌停活动 | {{limit_activity}} | {{change}} | {{evidence_id}} |
-| 行业/概念资金流 | {{fund_flows}} | {{change}} | {{evidence_id}} |
+| 行业/概念 1/3/5 日资金流 | {{fund_flows}} | {{change}} | {{evidence_id}} |
+| 大单数据（可选） | {{large_trades_or_unavailable}} | 仅作异常线索 | {{evidence_id}} |
 
 ## 与盘前假设的对照
 

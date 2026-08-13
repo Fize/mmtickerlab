@@ -16,6 +16,9 @@ description: |
 4. 区分事实、解释、假设和反证；不把实时值写成收盘值，不用当前截面回填历史截面。
 5. 报告完成后必须运行 `workflow.py validate`。验证失败不交付报告。
 6. 不调用任何委托或执行层工具；本技能只采集市场数据、形成研究计划和复盘结论。
+7. `market` 只提供数据。报告中的市场定性、题材阶段、假设与反证必须由你读取数据包后完成，不能期待数据脚本返回结论。
+8. 必须实际使用数据包中的全市场涨跌分布与排行、指数历史、连板梯队、行业分布及行业/概念 1/3/5 日资金流；不能只摘录汇总家数。
+9. 盘中比较前一交易日收盘与午间原始数据；盘后比较午间与收盘原始数据，不从前置报告文本反推数值。
 
 ## 环境
 
@@ -33,11 +36,13 @@ uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 | 快照 | 允许时间（Asia/Shanghai） | 内容 |
 |---|---|---|
 | 午间 | 交易日 11:30-13:00 | 全市场宽度与成交额、资金流、涨跌停活动、指数 |
-| 收盘 | 交易日 15:05 后；龙虎榜需 16:30 后 | 全市场收盘结构、资金流、涨跌停活动、指数、龙虎榜 |
+| 收盘 | 交易日 15:05 后 | 全市场收盘结构、资金流、涨跌停活动、指数 |
+| 龙虎榜 | 交易日 16:30 后 | 当日龙虎榜明细与机构统计 |
 
 ```bash
 skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase noon --date YYYYMMDD
 skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase close --date YYYYMMDD
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase lhb --date YYYYMMDD
 ```
 
 如果 `plan-review/.venv` 尚未建立，可用系统 Python 运行 `workflow.py`；它会通过子进程调用 `market/.venv`。
@@ -50,7 +55,7 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py captu
 
 - AKShare 交易日历；
 - 前一交易日收盘全市场快照；
-- 前一交易日指数历史与收盘资金流快照；
+- 前一交易日指数历史与收盘行业/概念 1/3/5 日资金流快照；
 - 前五个交易日涨停、炸板和跌停活动；
 - 已结束交易日的美股指数，以及采集时点的 A50、美元人民币；
 - 自选股历史（仅在用户配置自选股时必需）。
@@ -59,7 +64,7 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py captu
 skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
 ```
 
-成功后读取返回的数据包和 [templates/pre_market.md](templates/pre_market.md)，创建 `report/YYYYMMDD_盘前计划.md`。重点说明隔夜背景、前日结构、最多三条今日假设及其失效条件。
+成功后读取返回的数据包和 [templates/pre_market.md](templates/pre_market.md)，创建 `report/YYYYMMDD_盘前计划.md`。必须检查指数多周期数据、市场宽度与涨跌分布、异动排行、连板梯队和行业分布、1/3/5 日资金排行及自选股 K 线/指标。重点说明隔夜背景、前日结构、最多三条今日假设及其失效条件。
 
 ## 盘中复盘
 
@@ -77,7 +82,7 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepa
 
 目标是复核全天判断、识别结构演变并形成次日研究清单。没有同日盘前报告、盘中报告或完整收盘快照时不能生成。
 
-16:30 后执行 `capture --phase close`，再运行：
+15:05 后执行 `capture --phase close` 保存收盘市场快照；16:30 后执行 `capture --phase lhb` 补充龙虎榜。两者都成功后再运行：
 
 ```bash
 skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase post --date YYYYMMDD

@@ -44,7 +44,7 @@ def init_db():
             deleted_count = cursor.rowcount
             conn.commit()
             if deleted_count > 0:
-                print(f"[cache_db] Pruned {deleted_count} expired cache entries.")
+                print(f"[cache_db] Pruned {deleted_count} expired cache entries.", file=sys.stderr)
     except Exception as e:
         print(f"[cache_db] Error initializing cache database: {e}", file=sys.stderr)
         
@@ -66,10 +66,12 @@ def is_trading_hour(dt: datetime) -> bool:
     return (morning_start <= t <= morning_end) or (afternoon_start <= t <= afternoon_end)
 
 def get_next_session_start(dt: datetime) -> datetime:
-    """Get the next A-share trading day's morning session start time (09:15:00)."""
+    """Get the next A-share quote session boundary."""
     current = dt
     if is_trading_day(current) and current.time() < datetime.strptime("09:15:00", "%H:%M:%S").time():
         return current.replace(hour=9, minute=15, second=0, microsecond=0)
+    if is_trading_day(current) and current.time() < datetime.strptime("13:00:00", "%H:%M:%S").time():
+        return current.replace(hour=13, minute=0, second=0, microsecond=0)
     
     current = current + timedelta(days=1)
     while not is_trading_day(current):

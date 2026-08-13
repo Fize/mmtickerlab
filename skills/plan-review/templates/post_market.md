@@ -10,7 +10,7 @@
 
 ## 数据状态
 
-- 结论：盘前和盘中报告均存在；收盘快照、指数、资金流、涨跌停与龙虎榜均已通过校验。
+- 结论：盘前和盘中报告均存在；独立采集的收盘快照与龙虎榜数据均已通过校验。
 - 证据范围：{{evidence_ids}}
 
 ## 收盘事实
@@ -19,8 +19,9 @@
 |---|---|---|---|
 | 主要指数 | {{indices}} | {{afternoon_change}} | {{evidence_id}} |
 | 成交额与市场宽度 | {{turnover_and_breadth}} | {{afternoon_change}} | {{evidence_id}} |
+| 涨跌分布与异动排行 | {{distribution_and_rankings}} | {{afternoon_change}} | {{evidence_id}} |
 | 涨跌停与炸板 | {{limit_activity}} | {{afternoon_change}} | {{evidence_id}} |
-| 行业/概念资金流 | {{fund_flows}} | {{afternoon_change}} | {{evidence_id}} |
+| 行业/概念 1/3/5 日资金流 | {{fund_flows}} | {{afternoon_change}} | {{evidence_id}} |
 
 ## 盘前与盘中判断复核
 

@@ -106,13 +106,15 @@ class WorkflowValidationTests(unittest.TestCase):
     def test_failed_capture_does_not_commit_partial_datasets(self) -> None:
         names = {
             "snapshot": "market_snapshot_noon",
-            "limits": "limit_activity",
-            "indices": "index_history",
+            "limits": "limit_activity_noon",
+            "indices": "index_history_noon",
         }
 
         def fake_market_call(dataset: str, day: str, **options):
             if dataset == "flows":
                 raise workflow.WorkflowError("资金流不可用")
+            if dataset == "big-deals":
+                raise workflow.WorkflowError("大单数据不可用")
             name = names[dataset]
             return {"status": "ready", "dataset": name, "target_date": day, "checks": []}
 
