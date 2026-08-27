@@ -28,6 +28,11 @@ import requests
 
 import indicators
 from raw_store import RawStore
+from providers.iwencai import (
+    APIError as IwencaiAPIError,
+    code_digits,
+    query_frame,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -51,6 +56,94 @@ INDEXES = {
 
 class DataError(RuntimeError):
     pass
+
+
+class ProviderDataError(DataError):
+    """The primary provider returned unusable data."""
+
+
+# Names are kept for readable call sites; all provider failures take the same
+# whole-dataset fallback path.
+ProviderTransportError = ProviderDataError
+ProviderSchemaError = ProviderDataError
+ProviderCompletenessError = ProviderDataError
+
+
+# Keep qualitative datasets (sentiment, chips and news) on AKShare.
+PRIMARY_DATASETS = {"calendar", "master", "indices", "snapshot", "limits", "flows",
+                    "big-deals", "lhb", "watchlist", "quote", "kline", "technical", "stock-flow"}
+PRIMARY_FUNCTIONS = {
+    "tool_trade_date_hist_sina", "stock_info_a_code_name", "stock_zh_a_spot",
+    "stock_zh_a_hist", "stock_zh_a_hist_min_em", "index_history", "stock_zt_pool_em",
+    "stock_zt_pool_zbgc_em", "stock_zt_pool_dtgc_em", "stock_fund_flow_industry",
+    "stock_fund_flow_concept", "stock_fund_flow_big_deal", "stock_lhb_detail_em",
+    "stock_lhb_jgmmtj_em", "stock_fund_flow_individual",
+}
+_PROVIDER_CONTEXT: dict[str, Any] | None = None
+_PROVIDER_META: dict[str, Any] | None = None
+
+
+def _raise_provider_schema(message: str) -> None:
+    raise ProviderSchemaError(message) if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled") else DataError(message)
+
+
+def _raise_provider_completeness(message: str) -> None:
+    raise ProviderCompletenessError(message) if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled") else DataError(message)
+
+
+def _iwencai_frame(function_name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> pd.DataFrame:
+    try:
+        return query_frame(function_name, args, kwargs, _PROVIDER_CONTEXT)
+    except IwencaiAPIError as exc:
+        raise ProviderDataError(str(exc)) from exc
+def _provider_warning(message: str, *, reason: str, used: str) -> None:
+    global _PROVIDER_META
+    _PROVIDER_META = {"primary_provider": "iwencai", "provider_used": used,
+                      "fallback": used != "iwencai", "fallback_reason": reason,
+                      "warnings": [{"code": "IWENCAI_API_KEY_MISSING" if "未配置" in message else "IWENCAI_FALLBACK", "message": message}]}
+    print(message, file=sys.stderr)
+
+
+def run_with_provider(dataset: str, builder: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Run a dataset atomically on 问财, or rerun the complete builder on AKShare."""
+    global _PROVIDER_CONTEXT, _PROVIDER_META
+    if dataset not in PRIMARY_DATASETS:
+        _PROVIDER_CONTEXT = None
+        _PROVIDER_META = None
+        return builder()
+    try:
+        # Check on every invocation so a process can be reconfigured at runtime.
+        key = os.environ.get("IWENCAI_API_KEY", "").strip()
+    except Exception:
+        key = ""
+    if not key:
+        _provider_warning(
+            "未配置同花顺问财 API Key，当前已降级使用 AKShare。请打开 https://www.iwencai.com/skillhub，"
+            "登录后进入对应 Skill，复制 IWENCAI_API_KEY，并配置环境变量 IWENCAI_API_KEY。",
+            reason="IWENCAI_API_KEY is not configured", used="akshare",
+        )
+        _PROVIDER_CONTEXT = {"enabled": False}
+        try:
+            return builder()
+        finally:
+            _PROVIDER_CONTEXT = None
+    _PROVIDER_CONTEXT = {"enabled": True}
+    _PROVIDER_META = {"primary_provider": "iwencai", "provider_used": "iwencai", "fallback": False,
+                      "fallback_reason": None, "warnings": []}
+    try:
+        return builder()
+    except ProviderDataError as exc:
+        # Only classified primary-provider failures are eligible for the
+        # atomic AKShare retry.  Business/date/argument DataError and unknown
+        # programming errors must remain visible to the caller.
+        if not _PROVIDER_CONTEXT.get("used"):
+            raise
+        reason = str(exc)
+        _provider_warning(f"问财数据获取失败，当前已整批降级使用 AKShare：{reason}", reason=reason, used="akshare")
+        _PROVIDER_CONTEXT = {"enabled": False}
+        return builder()
+    finally:
+        _PROVIDER_CONTEXT = None
 
 
 def now_shanghai() -> datetime:
@@ -128,6 +221,7 @@ def persist_observation_rows(
     key_fields: tuple[str, ...] = ("security_code",),
 ) -> int:
     observed_at = now_shanghai().isoformat(timespec="seconds")
+    source = provider_storage_source(kind, source)
     normalized = []
     for index, row in enumerate(rows):
         key_parts = [str(row.get(field) or "") for field in key_fields]
@@ -139,9 +233,13 @@ def persist_observation_rows(
             "event_time": iso_event_time(event_value, target) if event_value else observed_at,
             "payload": row,
         })
-    return raw_store().insert_observations(
-        kind, normalized, target_date=day_key(target), observed_at=observed_at, source=source,
-    )
+    def write() -> int:
+        return raw_store().insert_observations(
+            kind, normalized, target_date=day_key(target), observed_at=observed_at, source=source)
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"):
+        _PROVIDER_CONTEXT.setdefault("pending_writes", []).append(write)
+        return len(normalized)
+    return write()
 
 
 RAW_KINDS = {
@@ -267,6 +365,17 @@ def records(frame: pd.DataFrame) -> list[dict[str, Any]]:
 
 def ak_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Keep library progress/retry chatter away from JSON stdout."""
+    function_name = getattr(fn, "__name__", "")
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled") and function_name in PRIMARY_FUNCTIONS:
+        _PROVIDER_CONTEXT["used"] = True
+        return _iwencai_frame(function_name, args, kwargs)
+    if "target_date" in kwargs:
+        # These are adapter-only controls.  AKShare functions do not accept
+        # them when the key is missing or the primary provider has fallen
+        # back.  Filter by argument name rather than function identity so
+        # monkeypatched/test callables get the same compatibility behavior.
+        kwargs = {key: value for key, value in kwargs.items()
+                  if key not in {"target_date", "end_date", "at", "expected_count"}}
     with contextlib.redirect_stdout(sys.stderr):
         return fn(*args, **kwargs)
 
@@ -276,8 +385,24 @@ def envelope(dataset: str, target: date, source: str, payload: dict[str, Any],
     failed = [item for item in checks if not item["passed"]]
     if failed:
         messages = "；".join(str(item["detail"]) for item in failed)
+        if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled") and _PROVIDER_CONTEXT.get("used"):
+            names = {item["name"] for item in failed}
+            error_type = (ProviderCompletenessError if any(
+                token in name for name in names for token in ("coverage", "rows", "length", "freshness")
+            ) else ProviderSchemaError)
+            raise error_type(f"{dataset} 数据校验失败：{messages}")
         raise DataError(f"{dataset} 数据校验失败：{messages}")
-    return {
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("pending_writes"):
+        for write in _PROVIDER_CONTEXT.pop("pending_writes"):
+            write()
+    provider_used = _PROVIDER_META.get("provider_used") if _PROVIDER_META else None
+    provider_called = bool(_PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("used"))
+    if provider_used == "iwencai" and not provider_called:
+        # Cache hits/local indicator calculations do not constitute a provider call.
+        provider_used = "local"
+    if provider_used == "iwencai":
+        source = f"同花顺问财 query2data ({dataset})"
+    document = {
         "schema_version": 1,
         "dataset": dataset,
         "target_date": day_key(target),
@@ -287,6 +412,26 @@ def envelope(dataset: str, target: date, source: str, payload: dict[str, Any],
         "checks": checks,
         "data": payload,
     }
+    if _PROVIDER_META:
+        meta = dict(_PROVIDER_META)
+        if provider_used == "local":
+            meta.update({"provider_used": "local", "fallback": False, "fallback_reason": None,
+                         "warnings": []})
+        document.update(meta)
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("trace_ids"):
+        document["provider_trace_ids"] = list(_PROVIDER_CONTEXT["trace_ids"])
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("queries"):
+        document["provider_queries"] = list(_PROVIDER_CONTEXT["queries"])
+        document["provider_final_query"] = _PROVIDER_CONTEXT.get("last_query")
+    return document
+
+
+def provider_storage_source(dataset: str, fallback: str) -> str:
+    """Use the actual provider in raw-store provenance, not the old adapter name."""
+    if (_PROVIDER_META and _PROVIDER_META.get("provider_used") == "iwencai" and
+            _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("used")):
+        return f"同花顺问财 query2data ({dataset})"
+    return fallback
 
 
 def check(name: str, passed: bool, detail: str) -> dict[str, Any]:
@@ -296,8 +441,11 @@ def check(name: str, passed: bool, detail: str) -> dict[str, Any]:
 def require_trading_day(target: date) -> dict[str, Any]:
     frame = ak_call(ak.tool_trade_date_hist_sina)
     if "trade_date" not in frame.columns:
-        raise DataError("交易日历缺少 trade_date 字段")
-    days = set(pd.to_datetime(frame["trade_date"]).dt.date)
+        _raise_provider_schema("交易日历缺少 trade_date 字段")
+    parsed = pd.to_datetime(frame["trade_date"], errors="coerce")
+    if parsed.isna().all():
+        _raise_provider_schema("交易日历 trade_date 字段无有效日期")
+    days = set(parsed.dropna().dt.date)
     if target not in days:
         raise DataError(f"{target} 不是交易日，禁止采集交易阶段快照")
     return check("trading_day", True, f"{target} 已在交易日历中确认")
@@ -321,8 +469,13 @@ def write_json(document: dict[str, Any], output: str | None) -> None:
 def calendar_dataset(target: date, count: int) -> dict[str, Any]:
     frame = ak_call(ak.tool_trade_date_hist_sina)
     if "trade_date" not in frame.columns:
-        raise DataError("交易日历缺少 trade_date 字段")
-    days = sorted(pd.to_datetime(frame["trade_date"]).dt.date.unique())
+        _raise_provider_schema("交易日历缺少 trade_date 字段")
+    parsed = pd.to_datetime(frame["trade_date"], errors="coerce")
+    if parsed.isna().all():
+        _raise_provider_schema("交易日历 trade_date 字段无有效日期")
+    days = sorted(parsed.dropna().dt.date.unique())
+    if not days:
+        _raise_provider_completeness("交易日历未返回有效交易日")
     prior = [item for item in days if item <= target]
     previous = [item for item in days if item < target]
     next_days = [item for item in days if item > target]
@@ -354,6 +507,24 @@ def calendar_dataset(target: date, count: int) -> dict[str, Any]:
 def _eastmoney_index_frame(code: str, start: date, end: date) -> pd.DataFrame:
     if code not in INDEXES:
         raise DataError(f"不支持的指数代码：{code}")
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"):
+        _PROVIDER_CONTEXT["used"] = True
+        frame = _iwencai_frame("index_history", (), {
+            "code": code, "start": day_key(start), "end": day_key(end),
+        })
+        if "日期" not in frame.columns:
+            raise ProviderDataError(f"问财指数 {code} 缺少日期字段")
+        frame = frame.rename(columns={"日期": "date", "开盘": "open", "收盘": "close",
+                                      "最高": "high", "最低": "low", "成交量": "volume",
+                                      "成交额": "turnover", "振幅": "amplitude_pct",
+                                      "涨跌幅": "change_pct", "涨跌额": "change",
+                                      "换手率": "turnover_rate_pct"})
+        required = {"date", "open", "close", "high", "low"}
+        if not required <= set(frame.columns):
+            raise ProviderDataError(f"问财指数 {code} 缺少字段：{sorted(required - set(frame.columns))}")
+        for column in set(frame.columns) - {"date"}:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        return _validate_index_frame(frame, code, start, end, require_code=True)
     _, secid = INDEXES[code]
     with contextlib.redirect_stdout(sys.stderr):
         response = requests.get(
@@ -384,7 +555,44 @@ def _eastmoney_index_frame(code: str, start: date, end: date) -> pd.DataFrame:
             "change_pct": float(parts[8]), "change": float(parts[9]),
             "turnover_rate_pct": float(parts[10]),
         })
-    return pd.DataFrame(rows)
+    return _validate_index_frame(pd.DataFrame(rows), code, start, end)
+
+
+def _validate_index_frame(frame: pd.DataFrame, code: str, start: date, end: date,
+                          *, require_code: bool = False) -> pd.DataFrame:
+    required = {"date", "open", "high", "low", "close"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ProviderSchemaError(f"指数 {code} 缺少字段：{missing}")
+    work = frame.copy()
+    code_column = next((column for column in ("指数代码", "代码", "股票代码", "证券代码")
+                        if column in work.columns), None)
+    if require_code and not code_column:
+        raise ProviderSchemaError(f"指数 {code} 缺少标的代码字段")
+    if code_column:
+        expected_digits = code_digits(code)
+        actual_codes = work[code_column].map(code_digits)
+        if actual_codes.isna().any() or not (actual_codes == expected_digits).all():
+            raise ProviderSchemaError(f"指数 {code} 标的代码不一致：需要 {expected_digits}")
+    parsed = pd.to_datetime(work["date"], errors="coerce")
+    if parsed.isna().any():
+        raise ProviderSchemaError(f"指数 {code} 日期字段含无效值")
+    work["date"] = parsed.dt.date
+    if work["date"].duplicated().any():
+        raise ProviderCompletenessError(f"指数 {code} 日期重复")
+    work = work.sort_values("date").reset_index(drop=True)
+    for column in ("open", "high", "low", "close"):
+        work[column] = pd.to_numeric(work[column], errors="coerce")
+        if not work[column].map(lambda value: value is not None and math.isfinite(float(value))).all():
+            raise ProviderSchemaError(f"指数 {code} 字段 {column} 含非有限数值")
+    if ((work["high"] < work[["open", "close"]].max(axis=1)) |
+            (work["low"] > work[["open", "close"]].min(axis=1)) |
+            (work["high"] < work["low"])).any():
+        raise ProviderSchemaError(f"指数 {code} OHLC 关系无效")
+    bounded = work[(work["date"] >= start) & (work["date"] <= end)]
+    if bounded.empty:
+        raise ProviderCompletenessError(f"指数 {code} 没有 {start} 至 {end} 的数据")
+    return bounded
 
 
 def indices_dataset(target: date, count: int, session: str | None = None) -> dict[str, Any]:
@@ -402,21 +610,23 @@ def indices_dataset(target: date, count: int, session: str | None = None) -> dic
     for code, (name, _) in INDEXES.items():
         frame = _eastmoney_index_frame(code, start, target)
         if frame.empty:
-            raise DataError(f"指数 {code} 无数据")
-        frame = frame[frame["date"] <= target.isoformat()].tail(count)
+            _raise_provider_completeness(f"指数 {code} 无数据")
+        frame = frame[frame["date"] <= target].tail(count)
         if len(frame) < count:
-            raise DataError(f"指数 {code} 仅有 {len(frame)} 条，要求 {count} 条")
+            error_type = ProviderCompletenessError if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled") else DataError
+            raise error_type(f"指数 {code} 仅有 {len(frame)} 条，要求 {count} 条")
         latest_dates.append(str(frame.iloc[-1]["date"]))
         index_rows = [{"security_code": code, "name": name, **row} for row in records(frame)]
         persist_observation_rows(
-            "index-bar", index_rows, target, "Eastmoney push2his fixed secid",
+            "index-bar", index_rows, target,
+            provider_storage_source("index_history", "Eastmoney push2his fixed secid"),
             event_field="date", key_fields=("security_code", "date"),
         )
         result[code] = {"name": name, "rows": [
             {key: value for key, value in row.items() if key not in {"security_code", "name"}}
             for row in index_rows
         ]}
-    expected = target.isoformat()
+    expected = str(target)
     checks = [
         check("all_indices", len(result) == len(INDEXES),
               f"要求 {len(INDEXES)} 个，取得 {len(result)} 个"),
@@ -451,12 +661,19 @@ def snapshot_dataset(target: date, session: str) -> dict[str, Any]:
         raise DataError(detail)
     spot = ak_call(ak.stock_zh_a_spot)
     master = ak_call(ak.stock_info_a_code_name)
+    # The provider master is the denominator for snapshot coverage.  Check
+    # its contract before touching columns so a malformed primary response
+    # reaches run_with_provider and triggers an atomic AKShare rerun.
+    if not {"code", "name"}.issubset(master.columns):
+        _raise_provider_schema("证券主数据缺少 code/name 字段")
+    if master.empty:
+        _raise_provider_completeness("证券主数据为空")
     required = {"代码", "名称", "最新价", "涨跌幅", "成交额", "时间戳"}
     missing = sorted(required - set(spot.columns))
     if missing:
-        raise DataError(f"全市场快照缺少字段：{missing}")
+        _raise_provider_schema(f"全市场快照缺少字段：{missing}")
     work = spot.copy()
-    work["plain_code"] = work["代码"].astype(str).str.replace(r"^(sh|sz|bj)", "", regex=True)
+    work["plain_code"] = work["代码"].map(code_digits)
     work["涨跌幅"] = pd.to_numeric(work["涨跌幅"], errors="coerce")
     work["成交额"] = pd.to_numeric(work["成交额"], errors="coerce")
     valid = work.dropna(subset=["plain_code", "名称", "最新价", "涨跌幅", "成交额"])
@@ -570,6 +787,8 @@ def limits_dataset(target: date, session: str | None = None) -> dict[str, Any]:
     closed = ak_call(ak.stock_zt_pool_em, date=key)
     broken = ak_call(ak.stock_zt_pool_zbgc_em, date=key)
     down = ak_call(ak.stock_zt_pool_dtgc_em, date=key)
+    if closed.empty and broken.empty and down.empty:
+        _raise_provider_completeness(f"涨跌停池 {key} 未返回任何数据")
     closed_required = {"代码", "名称", "涨跌幅", "连板数", "炸板次数", "所属行业"}
     broken_required = {"代码", "名称", "最新价", "涨停价"}
     failed = broken.copy()
@@ -612,7 +831,7 @@ def limits_dataset(target: date, session: str | None = None) -> dict[str, Any]:
     ]
     def limit_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
         return [{
-            "security_code": str(row.get("代码", "")).zfill(6), "name": clean_number(row.get("名称")),
+            "security_code": code_digits(row.get("代码", "")), "name": clean_number(row.get("名称")),
             "last": number(row.get("最新价")), "change_pct": percent_number(row.get("涨跌幅")),
             "turnover_yuan": provider_amount_yuan(row.get("成交额"), "成交额"),
             "turnover_rate_pct": percent_number(row.get("换手率")),
@@ -678,7 +897,7 @@ def flows_dataset(target: date, session: str) -> dict[str, Any]:
             if not candidates:
                 candidates = [col for col in frame.columns if "净额" in str(col)]
             if len(candidates) != 1:
-                raise DataError(f"{kind}/{period}日资金流无法唯一识别净额字段：{list(frame.columns)}")
+                _raise_provider_schema(f"{kind}/{period}日资金流无法唯一识别净额字段：{list(frame.columns)}")
             net_col = candidates[0]
             work = frame.copy()
             work["_net_yuan"] = work[net_col].map(lambda value: provider_amount_yuan(value, net_col))
@@ -729,6 +948,8 @@ def lhb_dataset(target: date) -> dict[str, Any]:
     key = day_key(target)
     detail = ak_call(ak.stock_lhb_detail_em, start_date=key, end_date=key)
     institutions = ak_call(ak.stock_lhb_jgmmtj_em, start_date=key, end_date=key)
+    if detail.empty and institutions.empty:
+        _raise_provider_completeness(f"龙虎榜 {key} 未返回明细或机构数据")
     checks = [
         trading_day_check,
         check("detail_schema", detail.empty or {"代码", "名称"} <= set(detail.columns),
@@ -739,7 +960,7 @@ def lhb_dataset(target: date) -> dict[str, Any]:
     def lhb_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
         return [{
             "date": clean_number(row.get("上榜日", row.get("上榜日期"))),
-            "security_code": str(row.get("代码", "")).zfill(6), "name": clean_number(row.get("名称")),
+            "security_code": code_digits(row.get("代码", "")), "name": clean_number(row.get("名称")),
             "close": number(row.get("收盘价")), "change_pct": percent_number(row.get("涨跌幅")),
             "reason": clean_number(row.get("上榜原因")), "interpretation": clean_number(row.get("解读")),
             "buy_yuan": provider_amount_yuan(row.get("龙虎榜买入额", row.get("机构买入总额")), "元"),
@@ -833,10 +1054,12 @@ def security_master_dataset(target: date) -> dict[str, Any]:
         raise DataError("Security master describes the current listed universe and cannot be backfilled")
     frame = ak_call(ak.stock_info_a_code_name)
     if not {"code", "name"} <= set(frame.columns):
-        raise DataError("Security master is missing code or name")
+        _raise_provider_schema("Security master is missing code or name")
+    if frame.empty:
+        _raise_provider_completeness("Security master returned no rows")
     rows = []
     for _, row in frame.iterrows():
-        code = str(row["code"]).zfill(6)
+        code = code_digits(row["code"])
         exchange, security_type = exchange_and_type(code)
         rows.append({"security_code": code, "name": str(row["name"]), "exchange": exchange,
                      "security_type": security_type, "listing_status": "listed"})
@@ -860,13 +1083,13 @@ def big_deals_dataset(target: date) -> dict[str, Any]:
     required = {"成交时间", "股票代码", "股票简称", "成交价格", "成交额", "大单性质", "涨跌幅"}
     missing = sorted(required - set(frame.columns))
     if missing:
-        raise DataError(f"Large trades are missing fields: {missing}")
+        _raise_provider_schema(f"Large trades are missing fields: {missing}")
     trade_times = pd.to_datetime(frame["成交时间"], errors="coerce")
     dated_rows = int(trade_times.notna().sum())
     target_rows = int((trade_times.dt.date == target).sum())
     rows = [{
         "trade_time": clean_number(row.get("成交时间")),
-        "security_code": str(row.get("股票代码")).zfill(6), "name": str(row.get("股票简称")),
+        "security_code": code_digits(row.get("股票代码")), "name": str(row.get("股票简称")),
         "price": number(row.get("成交价格")), "volume": number(row.get("成交量")),
         # This endpoint labels the column as “成交额” but returns values in 10K CNY.
         "amount_yuan": provider_amount_yuan(row.get("成交额"), "成交额(万元)"),
@@ -906,15 +1129,32 @@ def quote_dataset(target: date, code_value: str) -> dict[str, Any]:
     code = stock_code(code_value)
     if target != now_shanghai().date():
         raise DataError("Realtime quotes are only valid for the current date")
-    info = akshare_patch.get_single_stock_realtime(code)
-    source = "Sina direct quote"
-    data = {"security_code": code, "exchange": exchange_for(code), "name": info.get("name"),
-            "last": number(info.get("price")), "change_pct": rounded_number(info.get("change_pct"), 6),
-            "change": rounded_number(info.get("change")), "open": number(info.get("open")),
-            "pre_close": number(info.get("pre_close")), "high": number(info.get("high")),
-            "low": number(info.get("low")), "volume": number(info.get("volume")),
-            "turnover_yuan": number(info.get("turnover")),
-            "quote_timestamp": clean_number(info.get("quote_timestamp"))}
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"):
+        _PROVIDER_CONTEXT["used"] = True
+        frame = _iwencai_frame("stock_zh_a_spot", (), {})
+        codes = frame.get("代码", pd.Series(dtype=str)).map(code_digits)
+        selected = frame[codes == code]
+        if selected.empty:
+            raise ProviderDataError(f"问财未返回股票 {code} 的实时行情")
+        row = selected.iloc[0]
+        source = "同花顺问财 A 股实时行情"
+        data = {"security_code": code, "exchange": exchange_for(code), "name": clean_number(row.get("名称")),
+                "last": number(row.get("最新价")), "change_pct": rounded_number(row.get("涨跌幅"), 6),
+                "change": rounded_number(row.get("涨跌额")), "open": number(row.get("今开")),
+                "pre_close": number(row.get("昨收")), "high": number(row.get("最高")),
+                "low": number(row.get("最低")), "volume": number(row.get("成交量")),
+                "turnover_yuan": number(row.get("成交额")),
+                "quote_timestamp": clean_number(row.get("时间戳"))}
+    else:
+        info = akshare_patch.get_single_stock_realtime(code)
+        source = "Sina direct quote"
+        data = {"security_code": code, "exchange": exchange_for(code), "name": info.get("name"),
+                "last": number(info.get("price")), "change_pct": rounded_number(info.get("change_pct"), 6),
+                "change": rounded_number(info.get("change")), "open": number(info.get("open")),
+                "pre_close": number(info.get("pre_close")), "high": number(info.get("high")),
+                "low": number(info.get("low")), "volume": number(info.get("volume")),
+                "turnover_yuan": number(info.get("turnover")),
+                "quote_timestamp": clean_number(info.get("quote_timestamp"))}
     persist_observation_rows(
         "stock-quote", [data], target, source,
         event_field="quote_timestamp", key_fields=("security_code",),
@@ -957,12 +1197,16 @@ def _kline_frame(
     history_multiplier = {"daily": 5, "weekly": 10, "monthly": 40}.get(period, 5)
     start = target - timedelta(days=max(count * history_multiplier, 500))
     if period in {"30", "60", "120"}:
-        frame = ak_call(ak.stock_zh_a_hist_min_em, symbol=code, period=period, adjust=adjust)
-        frame.attrs["market_source"] = "AKShare.stock_zh_a_hist_min_em"
+        frame = ak_call(
+            ak.stock_zh_a_hist_min_em, symbol=code, period=period, adjust=adjust,
+            target_date=day_key(at.date() if at else target),
+            end_date=day_key(at.date() if at else target),
+            at=at.isoformat() if at else None, expected_count=count,
+        )
+        frame.attrs["market_source"] = (
+            "同花顺问财 query2data" if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled")
+            else "AKShare.stock_zh_a_hist_min_em")
         date_col = "时间"
-        timestamps = pd.to_datetime(frame.get(date_col), errors="coerce")
-        upper = at.replace(tzinfo=None) if at else datetime.combine(target, time.max)
-        frame = frame[timestamps <= upper]
     else:
         effective_target = target
         if at and at.date() == target and at.time().replace(tzinfo=None) < time(15, 0):
@@ -970,8 +1214,14 @@ def _kline_frame(
         try:
             frame = ak_call(ak.stock_zh_a_hist, symbol=code, period=period, adjust=adjust,
                             start_date=day_key(start), end_date=day_key(effective_target))
-            frame.attrs["market_source"] = "AKShare.stock_zh_a_hist (Eastmoney)"
-        except Exception:
+            frame.attrs["market_source"] = (
+                "同花顺问财 query2data" if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled")
+                else "AKShare.stock_zh_a_hist (Eastmoney)")
+        except ProviderDataError as exc:
+            # Do not hide an invalid primary response inside the local Sina
+            # rescue path; run_with_provider must restart the whole dataset.
+            raise
+        except (TypeError, ValueError, KeyError, OSError, RuntimeError):
             symbol = f"{exchange_for(code)}{code}"
             daily = ak_call(
                 ak.stock_zh_a_daily, symbol=symbol, start_date=day_key(start),
@@ -1001,8 +1251,68 @@ def _kline_frame(
             frame.attrs["market_source"] = "AKShare.stock_zh_a_daily (Sina fallback)"
         date_col = "日期"
     if frame.empty or date_col not in frame.columns:
-        raise DataError(f"No {period} K-line data for {code}")
-    return frame.tail(count).copy()
+        raise ProviderCompletenessError(f"No {period} K-line data for {code}")
+    return _validate_kline_frame(frame, code, target, period, count, at, date_col=date_col)
+
+
+def _validate_kline_frame(
+    frame: pd.DataFrame,
+    code: str,
+    target: date,
+    period: str,
+    count: int,
+    at: datetime | None,
+    *,
+    date_col: str,
+    require_code: bool | None = None,
+) -> pd.DataFrame:
+    """Validate and canonicalize provider bars before any raw-store write."""
+    required = {date_col, "开盘", "最高", "最低", "收盘"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ProviderSchemaError(f"{period} K 线缺少字段：{missing}")
+    work = frame.copy()
+    code_column = next((column for column in ("股票代码", "代码", "证券代码", "指数代码")
+                        if column in work.columns), None)
+    if require_code is None:
+        require_code = bool(_PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"))
+    if require_code and not code_column:
+        raise ProviderSchemaError(f"{period} K 线缺少标的代码字段")
+    if code_column:
+        expected_digits = code_digits(code)
+        actual_codes = work[code_column].map(code_digits)
+        if actual_codes.isna().any() or not (actual_codes == expected_digits).all():
+            raise ProviderSchemaError(f"{period} K 线标的代码不一致：需要 {expected_digits}")
+    parsed = pd.to_datetime(work[date_col], errors="coerce")
+    if parsed.isna().any():
+        raise ProviderSchemaError(f"{period} K 线含无效时间字段")
+    if getattr(parsed.dt, "tz", None) is not None:
+        parsed = parsed.dt.tz_localize(None)
+    work[date_col] = parsed
+    work = work.sort_values(date_col).reset_index(drop=True)
+    if work[date_col].duplicated().any():
+        raise ProviderCompletenessError(f"{period} K 线时间戳重复")
+    upper = pd.Timestamp(at).tz_localize(None) if at and getattr(pd.Timestamp(at), "tzinfo", None) else pd.Timestamp(at) if at else pd.Timestamp.combine(target, time.max)
+    if date_col == "时间":
+        target_day = at.date() if at else target
+        work = work[work[date_col].dt.date == target_day].copy()
+        if work.empty:
+            raise ProviderCompletenessError(f"{period} K 线没有目标日期 {target_day} 的数据")
+    if (work[date_col] > upper).any():
+        work = work[work[date_col] <= upper].copy()
+    if work.empty:
+        raise ProviderCompletenessError(f"{period} K 线没有截止目标的有效数据")
+    for column in ("开盘", "最高", "最低", "收盘"):
+        work[column] = pd.to_numeric(work[column], errors="coerce")
+        if not work[column].map(lambda value: value is not None and math.isfinite(float(value))).all():
+            raise ProviderSchemaError(f"{period} K 线字段 {column} 含非有限数值")
+    if ((work["最高"] < work[["开盘", "收盘"]].max(axis=1)) |
+            (work["最低"] > work[["开盘", "收盘"]].min(axis=1)) |
+            (work["最高"] < work["最低"])).any():
+        raise ProviderSchemaError(f"{period} K 线 OHLC 关系无效")
+    if len(work) < count:
+        raise ProviderCompletenessError(f"{period} K 线要求 {count} 条，实际 {len(work)} 条")
+    return work.tail(count).copy()
 
 
 def normalized_bar_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
@@ -1024,10 +1334,15 @@ def persist_bars(
 ) -> int:
     normalized = [{**row, "timestamp": iso_event_time(row.get("timestamp"), now_shanghai().date())}
                   for row in rows]
-    return raw_store().insert_bars(
-        code, period, normalized, adjust=adjust, source=source,
-        observed_at=now_shanghai().isoformat(timespec="seconds"),
-    )
+    source = provider_storage_source(f"{period}-bars", source)
+    observed_at = now_shanghai().isoformat(timespec="seconds")
+    def write() -> int:
+        return raw_store().insert_bars(
+            code, period, normalized, adjust=adjust, source=source, observed_at=observed_at)
+    if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"):
+        _PROVIDER_CONTEXT.setdefault("pending_writes", []).append(write)
+        return len(normalized)
+    return write()
 
 
 def kline_dataset(
@@ -1043,15 +1358,16 @@ def kline_dataset(
     source = frame.attrs.get("market_source", "AKShare stock history")
     date_col = "时间" if "时间" in frame.columns else "日期"
     rows = normalized_bar_rows(frame)
-    persist_bars(code, period, rows, adjust, source)
     actual_latest = pd.to_datetime(frame.iloc[-1][date_col], errors="coerce")
     latest_ok = not pd.isna(actual_latest) and actual_latest.date() <= target
-    return envelope("stock_kline", target, source,
-                    {"security_code": code, "period": period, "adjust": adjust,
-                     "requested_at": at.isoformat() if at else None,
-                     "actual_latest_timestamp": clean_number(actual_latest), "rows": rows},
-                    [check("rows", len(rows) == count, f"Requested {count}, loaded {len(rows)}"),
-                     check("latest_not_after_target", latest_ok, f"Latest {actual_latest}, target {target}")])
+    persist_bars(code, period, rows, adjust, provider_storage_source("stock_kline", source))
+    document = envelope("stock_kline", target, source,
+                        {"security_code": code, "period": period, "adjust": adjust,
+                         "requested_at": at.isoformat() if at else None,
+                         "actual_latest_timestamp": clean_number(actual_latest), "rows": rows},
+                        [check("rows", len(rows) == count, f"Requested {count}, loaded {len(rows)}"),
+                         check("latest_not_after_target", latest_ok, f"Latest {actual_latest}, target {target}")])
+    return document
 
 
 def technical_dataset(
@@ -1202,9 +1518,13 @@ def stock_flow_dataset(target: date, code_value: str, period: int) -> dict[str, 
         raise DataError("Stock fund flow rankings are not available before the current trading session starts")
     symbol = "即时" if period == 1 else f"{period}日排行"
     frame = ak_call(ak.stock_fund_flow_individual, symbol=symbol)
-    selected = frame[frame["股票代码"].astype(str).str.zfill(6) == code]
+    required = {"股票代码", "股票简称"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        _raise_provider_schema(f"个股资金流缺少字段：{missing}")
+    selected = frame[frame["股票代码"].map(code_digits) == code]
     if selected.empty:
-        raise DataError(f"No {period}-day fund flow for {code}")
+        _raise_provider_completeness(f"No {period}-day fund flow for {code}")
     row = selected.iloc[0]
     data = {"security_code": code, "name": clean_number(row.get("股票简称")), "period_days": period,
             "last": number(row.get("最新价")), "change_pct": percent_number(row.get("涨跌幅", row.get("阶段涨跌幅"))),
@@ -1308,10 +1628,10 @@ def fetch_current_market_quotes(target: date) -> int:
     required = {"代码", "名称", "最新价", "涨跌幅", "成交额", "时间戳"}
     missing = sorted(required - set(spot.columns))
     if missing:
-        raise DataError(f"全市场行情明细缺少字段：{missing}")
+        _raise_provider_schema(f"全市场行情明细缺少字段：{missing}")
     rows = []
     for _, row in spot.iterrows():
-        code = str(row.get("代码", "")).replace("sh", "").replace("sz", "").replace("bj", "")
+        code = code_digits(row.get("代码", ""))
         if len(code) != 6 or not code.isdigit():
             continue
         rows.append({
@@ -1330,7 +1650,7 @@ def fetch_current_market_quotes(target: date) -> int:
             "quote_timestamp": clean_number(row.get("时间戳")),
         })
     if not rows:
-        raise DataError("No current full-market quote rows")
+        _raise_provider_completeness("No current full-market quote rows")
     return persist_observation_rows(
         "market-quote", rows, target, "AKShare.stock_zh_a_spot",
         event_field="quote_timestamp", key_fields=("security_code",),
@@ -1381,7 +1701,7 @@ def fetch_raw_kind(
                 if not net_columns:
                     net_columns = [column for column in frame.columns if "净额" in str(column)]
                 if len(net_columns) != 1:
-                    raise DataError(
+                    _raise_provider_schema(
                         f"{sector_kind}/{period_days}日资金流无法唯一识别净额字段：{list(frame.columns)}"
                     )
                 net_column = net_columns[0]
@@ -1487,6 +1807,8 @@ def raw_dataset(
     if len(rows) < count and not (kind != "stock-bar" and rows and not start and not end and not at):
         try:
             fetch_raw_kind(kind, target, code, period, count, adjust, statement, flow_period, at)
+        except ProviderDataError:
+            raise
         except Exception as exc:
             acquisition_error = str(exc)
         if kind == "stock-bar":
@@ -1549,6 +1871,15 @@ def watchlist_dataset(target: date, count: int) -> dict[str, Any]:
             frame = ak_call(ak.stock_zh_a_hist, symbol=code, period="daily", adjust="qfq",
                             start_date=(date(target.year - 2, 1, 1)).strftime("%Y%m%d"),
                             end_date=day_key(target))
+        except ProviderDataError as exc:
+            # A malformed/partial primary response is a dataset-level
+            # failure.  Do not turn it into a per-stock status: the outer
+            # provider runner must restart the complete builder on AKShare.
+            if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"):
+                raise
+            stocks[code] = {"status": "provider_error", "error": str(exc),
+                            "available_rows": 0, "kline": [], "technical": []}
+            continue
         except Exception as exc:
             stocks[code] = {"status": "provider_error", "error": str(exc),
                             "available_rows": 0, "kline": [], "technical": []}
@@ -1680,7 +2011,17 @@ def main() -> int:
                 args.statement, args.flow_period, start, end, at,
             ),
         }
-        write_json(builders[args.dataset](), args.output)
+        provider_dataset = args.dataset
+        if args.dataset == "raw":
+            raw_primary_kinds = {"security-master": "master", "trading-calendar": "calendar",
+                                 "index-bar": "indices", "market-quote": "snapshot",
+                                 "stock-quote": "quote", "stock-bar": "kline",
+                                 "limit-up": "limits", "limit-break": "limits", "limit-down": "limits",
+                                 "sector-flow": "flows", "large-trade": "big-deals",
+                                 "dragon-tiger": "lhb", "dragon-tiger-institution": "lhb",
+                                 "stock-flow": "stock-flow"}
+            provider_dataset = raw_primary_kinds.get(args.kind or "", "")
+        write_json(run_with_provider(provider_dataset, builders[args.dataset]), args.output)
         return 0
     except Exception as exc:
         print(json.dumps({"status": "blocked", "dataset": args.dataset,
