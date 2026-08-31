@@ -1,3 +1,5 @@
+
+
 # mmtickerlab
 
 面向 A 股研究与模拟交易的 Claude Code 技能集合。项目通过 Python 脚本调用 [AKShare](https://github.com/akfamily/akshare) 获取市场数据，并使用 `uv` 管理环境。
@@ -31,6 +33,8 @@ uv pip install --python skills/sim-trade/.venv -r skills/sim-trade/requirements.
 ```
 
 `plan-review` 工作流本身只依赖 Python 标准库，采集数据时会调用 `market` 的环境。
+
+`market` 的市场数据优先使用同花顺问财；使用前设置 `IWENCAI_API_KEY`，未设置时整批降级到 AKShare。
 
 ## 使用示例
 
