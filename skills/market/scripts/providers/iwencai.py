@@ -200,14 +200,62 @@ def _count(value: Any) -> int | None:
 FUNCTION_SKILLS = {"industry": "hithink-industry-query", "market": "hithink-market-query"}
 
 
+def detect_market(value: Any) -> str:
+    raw = str(value).strip().upper()
+    if raw.endswith(".HK") or raw.startswith("HK"):
+        return "hk"
+    if raw.endswith(".US") or raw.startswith("US."):
+        return "us"
+    for prefix in ("SH", "SZ", "BJ"):
+        if raw.startswith(prefix) or raw.endswith(f".{prefix}"):
+            return "cn"
+    clean = raw.replace(".", "")
+    if len(clean) == 5 and clean.isdigit():
+        return "hk"
+    if len(clean) == 6 and clean.isdigit():
+        return "cn"
+    if clean.isalpha():
+        return "us"
+    return "cn"
+
+
+def normalize_code(value: Any, market: str | None = None) -> str:
+    raw = str(value).strip().upper()
+    if not market:
+        market = detect_market(raw)
+    if market == "hk":
+        if raw.endswith(".HK"):
+            raw = raw[:-3]
+        if raw.startswith("HK"):
+            raw = raw[2:]
+        digits = "".join(c for c in raw if c.isdigit())
+        return digits[-5:].zfill(5) if digits else raw
+    elif market == "us":
+        if raw.endswith(".US"):
+            raw = raw[:-3]
+        if raw.startswith("US."):
+            raw = raw[3:]
+        return raw.strip()
+    else:
+        clean = raw.replace(".", "")
+        for prefix in ("SH", "SZ", "BJ"):
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):]
+            if clean.endswith(prefix):
+                clean = clean[:-len(prefix)]
+        digits = "".join(c for c in clean if c.isdigit())
+        return digits[-6:].zfill(6) if digits else ""
+
+
 def code_digits(value: Any) -> str:
-    digits = "".join(character for character in str(value).upper() if character.isdigit())
-    return digits[-6:].zfill(6) if digits else ""
+    return normalize_code(value)
 
 
 def _query(function_name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[str, str]:
     code = kwargs.get("symbol", kwargs.get("code", args[0] if args else ""))
     day = kwargs.get("date") or kwargs.get("end_date") or kwargs.get("target_date") or ""
+    market = kwargs.get("market") or (detect_market(code) if code else "cn")
+    norm_code = normalize_code(code, market) if code else ""
     if function_name == "tool_trade_date_hist_sina":
         return "A股交易日历 交易日期", FUNCTION_SKILLS["market"]
     if function_name == "stock_info_a_code_name":
@@ -226,13 +274,18 @@ def _query(function_name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) ->
         return f"A股个股 {kwargs.get('symbol','即时')} 资金流向 股票代码 股票简称 最新价 涨跌幅 换手率 流入资金 流出资金 净额 成交额", FUNCTION_SKILLS["market"]
     period = kwargs.get("period", "daily")
     adjust = {"qfq": "前复权", "hfq": "后复权"}.get(str(kwargs.get("adjust", "")).lower(), "不复权")
+    if function_name == "stock_quote":
+        prefix = "港股" if market == "hk" else "美股" if market == "us" else "A股"
+        return f"{prefix} 股票代码={norm_code} 实时行情 股票代码 股票简称 最新价 昨收 今开 最高 最低 涨跌额 涨跌幅 成交量 成交额 换手率 时间戳", FUNCTION_SKILLS["market"]
     if function_name == "stock_zh_a_hist_min_em":
-        return f"股票代码={code} 日期={day} 周期={period}分钟 复权={adjust} 分钟行情 时间 开盘 最高 最低 收盘 成交量 成交额", FUNCTION_SKILLS["market"]
+        prefix = "港股 " if market == "hk" else "美股 " if market == "us" else ""
+        return f"{prefix}股票代码={norm_code} 日期={day} 周期={period}分钟 复权={adjust} 分钟行情 时间 开盘 最高 最低 收盘 成交量 成交额", FUNCTION_SKILLS["market"]
     if function_name == "stock_fund_flow_big_deal":
         return "A股今日大单成交 成交时间 股票代码 股票简称 成交价格 成交量 成交额 大单性质 涨跌幅", FUNCTION_SKILLS["market"]
     if function_name == "stock_zh_a_spot":
         return "A股实时行情 股票代码 股票简称 最新价 昨收 今开 最高 最低 涨跌额 涨跌幅 成交量 成交额 换手率 时间戳", FUNCTION_SKILLS["market"]
-    return f"股票代码={code} 日期在{kwargs.get('start_date','')}至{kwargs.get('end_date','')} {period}行情 复权={adjust} 日期 开盘 最高 最低 收盘 成交量 成交额 涨跌幅 换手率", FUNCTION_SKILLS["market"]
+    prefix = "港股 " if market == "hk" else "美股 " if market == "us" else ""
+    return f"{prefix}股票代码={norm_code} 日期在{kwargs.get('start_date','')}至{kwargs.get('end_date','')} {period}行情 复权={adjust} 日期 开盘 最高 最低 收盘 成交量 成交额 涨跌幅 换手率", FUNCTION_SKILLS["market"]
 
 
 def query_frame(function_name: str, args: tuple[Any, ...], kwargs: dict[str, Any], context: dict[str, Any] | None = None):
@@ -254,7 +307,7 @@ def query_frame(function_name: str, args: tuple[Any, ...], kwargs: dict[str, Any
         aliases = {"交易日期": "trade_date"}
     elif function_name == "stock_info_a_code_name":
         aliases = {"股票代码": "code", "证券代码": "code", "股票简称": "name", "证券简称": "name"}
-    elif function_name == "stock_zh_a_spot":
+    elif function_name in {"stock_zh_a_spot", "stock_quote"}:
         aliases = {"股票代码": "代码", "证券代码": "代码", "股票简称": "名称", "证券简称": "名称"}
     frame = frame.rename(columns=aliases)
     if frame.empty:
@@ -281,7 +334,7 @@ def query_frame(function_name: str, args: tuple[Any, ...], kwargs: dict[str, Any
         elif kwargs.get("end_date"):
             frame = frame[parsed.dt.date <= pd.Timestamp(kwargs["end_date"]).date()]
     expected = kwargs.get("symbol") or kwargs.get("code")
-    if expected and function_name in {"stock_zh_a_hist", "stock_zh_a_hist_min_em", "index_history"}:
+    if expected and function_name in {"stock_zh_a_hist", "stock_zh_a_hist_min_em", "index_history", "stock_quote"}:
         column = next((name for name in ("代码", "股票代码", "证券代码", "指数代码") if name in frame), None)
         if not column or not all(frame[column].map(code_digits) == code_digits(expected)):
             raise APIError(f"问财 {function_name} 标的代码不一致")

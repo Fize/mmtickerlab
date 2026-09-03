@@ -31,6 +31,7 @@ from raw_store import RawStore
 from providers.iwencai import (
     APIError as IwencaiAPIError,
     code_digits,
+    detect_market,
     query_frame,
 )
 
@@ -73,7 +74,7 @@ ProviderCompletenessError = ProviderDataError
 PRIMARY_DATASETS = {"calendar", "master", "indices", "snapshot", "limits", "flows",
                     "big-deals", "lhb", "watchlist", "quote", "kline", "technical", "stock-flow"}
 PRIMARY_FUNCTIONS = {
-    "tool_trade_date_hist_sina", "stock_info_a_code_name", "stock_zh_a_spot",
+    "tool_trade_date_hist_sina", "stock_info_a_code_name", "stock_zh_a_spot", "stock_quote",
     "stock_zh_a_hist", "stock_zh_a_hist_min_em", "index_history", "stock_zt_pool_em",
     "stock_zt_pool_zbgc_em", "stock_zt_pool_dtgc_em", "stock_fund_flow_industry",
     "stock_fund_flow_concept", "stock_fund_flow_big_deal", "stock_lhb_detail_em",
@@ -104,9 +105,10 @@ def _provider_warning(message: str, *, reason: str, used: str) -> None:
     print(message, file=sys.stderr)
 
 
-def run_with_provider(dataset: str, builder: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+def run_with_provider(dataset: str, builder: Callable[[], dict[str, Any]], *, target_code: str | None = None) -> dict[str, Any]:
     """Run a dataset atomically on 问财, or rerun the complete builder on AKShare."""
     global _PROVIDER_CONTEXT, _PROVIDER_META
+    market = detect_market(target_code) if target_code else "cn"
     if dataset not in PRIMARY_DATASETS:
         _PROVIDER_CONTEXT = None
         _PROVIDER_META = None
@@ -117,6 +119,8 @@ def run_with_provider(dataset: str, builder: Callable[[], dict[str, Any]]) -> di
     except Exception:
         key = ""
     if not key:
+        if market != "cn":
+            raise DataError(f"未配置同花顺问财 API Key，且港美股标的 ({target_code}) 不支持通过 AKShare 兜底。请配置环境变量 IWENCAI_API_KEY。")
         _provider_warning(
             "未配置同花顺问财 API Key，当前已降级使用 AKShare。请打开 https://www.iwencai.com/skillhub，"
             "登录后进入对应 Skill，复制 IWENCAI_API_KEY，并配置环境变量 IWENCAI_API_KEY。",
@@ -139,6 +143,8 @@ def run_with_provider(dataset: str, builder: Callable[[], dict[str, Any]]) -> di
         if not _PROVIDER_CONTEXT.get("used"):
             raise
         reason = str(exc)
+        if market != "cn":
+            raise DataError(f"问财港美股数据获取失败: {reason}，且港美股标的 ({target_code}) 不支持通过 AKShare 兜底。") from exc
         _provider_warning(f"问财数据获取失败，当前已整批降级使用 AKShare：{reason}", reason=reason, used="akshare")
         _PROVIDER_CONTEXT = {"enabled": False}
         return builder()
@@ -285,18 +291,44 @@ def rounded_number(value: Any, digits: int = 4) -> float | None:
 
 
 def stock_code(value: str) -> str:
-    clean = str(value).strip().upper().replace(".", "")
-    for prefix in ("SH", "SZ", "BJ"):
-        if clean.startswith(prefix):
-            clean = clean[len(prefix):]
-        if clean.endswith(prefix):
-            clean = clean[:-len(prefix)]
-    if len(clean) != 6 or not clean.isdigit():
-        raise DataError(f"Invalid security code: {value}")
-    return clean
+    clean = str(value).strip().upper()
+    market = detect_market(clean)
+    if market == "hk":
+        if clean.endswith(".HK"):
+            clean = clean[:-3]
+        if clean.startswith("HK"):
+            clean = clean[2:]
+        digits = "".join(c for c in clean if c.isdigit())
+        if not digits or len(digits) > 5:
+            raise DataError(f"Invalid HK security code: {value}")
+        return digits[-5:].zfill(5)
+    elif market == "us":
+        if clean.endswith(".US"):
+            clean = clean[:-3]
+        if clean.startswith("US."):
+            clean = clean[3:]
+        clean = clean.strip()
+        if not clean or not clean.replace(".", "").isalpha() or len(clean) > 8:
+            raise DataError(f"Invalid US security code: {value}")
+        return clean
+    else:
+        clean = clean.replace(".", "")
+        for prefix in ("SH", "SZ", "BJ"):
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):]
+            if clean.endswith(prefix):
+                clean = clean[:-len(prefix)]
+        if len(clean) != 6 or not clean.isdigit():
+            raise DataError(f"Invalid security code: {value}")
+        return clean
 
 
 def exchange_for(code: str) -> str:
+    market = detect_market(code)
+    if market == "hk":
+        return "hk"
+    if market == "us":
+        return "us"
     if code.startswith(("60", "68", "51", "52", "56", "58")):
         return "sh"
     if code.startswith(("00", "30", "15", "16")):
@@ -369,13 +401,16 @@ def ak_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled") and function_name in PRIMARY_FUNCTIONS:
         _PROVIDER_CONTEXT["used"] = True
         return _iwencai_frame(function_name, args, kwargs)
-    if "target_date" in kwargs:
+    market = kwargs.get("market") or (detect_market(kwargs.get("symbol", "")) if kwargs.get("symbol") else "cn")
+    if market != "cn":
+        raise DataError(f"港美股标的 ({kwargs.get('symbol')}) 不支持通过 AKShare 兜底获取数据")
+    if "target_date" in kwargs or "market" in kwargs:
         # These are adapter-only controls.  AKShare functions do not accept
         # them when the key is missing or the primary provider has fallen
         # back.  Filter by argument name rather than function identity so
         # monkeypatched/test callables get the same compatibility behavior.
         kwargs = {key: value for key, value in kwargs.items()
-                  if key not in {"target_date", "end_date", "at", "expected_count"}}
+                  if key not in {"target_date", "end_date", "at", "expected_count", "market"}}
     with contextlib.redirect_stdout(sys.stderr):
         return fn(*args, **kwargs)
 
@@ -1127,18 +1162,27 @@ def big_deals_dataset(target: date) -> dict[str, Any]:
 
 def quote_dataset(target: date, code_value: str) -> dict[str, Any]:
     code = stock_code(code_value)
+    market = detect_market(code)
     if target != now_shanghai().date():
         raise DataError("Realtime quotes are only valid for the current date")
     if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled"):
         _PROVIDER_CONTEXT["used"] = True
-        frame = _iwencai_frame("stock_zh_a_spot", (), {})
-        codes = frame.get("代码", pd.Series(dtype=str)).map(code_digits)
+        if market != "cn":
+            frame = _iwencai_frame("stock_quote", (), {"symbol": code, "market": market})
+            source = f"同花顺问财 {market.upper()} 实时行情"
+        else:
+            frame = _iwencai_frame("stock_zh_a_spot", (), {})
+            source = "同花顺问财 A 股实时行情"
+        column = next((name for name in ("代码", "股票代码", "证券代码") if name in frame.columns), None)
+        if not column:
+            raise ProviderDataError(f"问财未返回股票 {code} 的代码字段")
+        codes = frame[column].map(code_digits)
         selected = frame[codes == code]
         if selected.empty:
             raise ProviderDataError(f"问财未返回股票 {code} 的实时行情")
         row = selected.iloc[0]
-        source = "同花顺问财 A 股实时行情"
-        data = {"security_code": code, "exchange": exchange_for(code), "name": clean_number(row.get("名称")),
+        data = {"security_code": code, "exchange": exchange_for(code),
+                "name": clean_number(row.get("名称") or row.get("股票简称") or row.get("证券简称")),
                 "last": number(row.get("最新价")), "change_pct": rounded_number(row.get("涨跌幅"), 6),
                 "change": rounded_number(row.get("涨跌额")), "open": number(row.get("今开")),
                 "pre_close": number(row.get("昨收")), "high": number(row.get("最高")),
@@ -1146,6 +1190,8 @@ def quote_dataset(target: date, code_value: str) -> dict[str, Any]:
                 "turnover_yuan": number(row.get("成交额")),
                 "quote_timestamp": clean_number(row.get("时间戳"))}
     else:
+        if market != "cn":
+            raise DataError(f"港美股标的 ({code}) 不支持通过 AKShare 兜底获取行情")
         info = akshare_patch.get_single_stock_realtime(code)
         source = "Sina direct quote"
         data = {"security_code": code, "exchange": exchange_for(code), "name": info.get("name"),
@@ -1194,6 +1240,7 @@ def _kline_frame(
     adjust: str,
     at: datetime | None = None,
 ) -> pd.DataFrame:
+    market = detect_market(code)
     history_multiplier = {"daily": 5, "weekly": 10, "monthly": 40}.get(period, 5)
     start = target - timedelta(days=max(count * history_multiplier, 500))
     if period in {"30", "60", "120"}:
@@ -1201,7 +1248,7 @@ def _kline_frame(
             ak.stock_zh_a_hist_min_em, symbol=code, period=period, adjust=adjust,
             target_date=day_key(at.date() if at else target),
             end_date=day_key(at.date() if at else target),
-            at=at.isoformat() if at else None, expected_count=count,
+            at=at.isoformat() if at else None, expected_count=count, market=market,
         )
         frame.attrs["market_source"] = (
             "同花顺问财 query2data" if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled")
@@ -1213,7 +1260,7 @@ def _kline_frame(
             effective_target = target - timedelta(days=1)
         try:
             frame = ak_call(ak.stock_zh_a_hist, symbol=code, period=period, adjust=adjust,
-                            start_date=day_key(start), end_date=day_key(effective_target))
+                            start_date=day_key(start), end_date=day_key(effective_target), market=market)
             frame.attrs["market_source"] = (
                 "同花顺问财 query2data" if _PROVIDER_CONTEXT and _PROVIDER_CONTEXT.get("enabled")
                 else "AKShare.stock_zh_a_hist (Eastmoney)")
@@ -1222,6 +1269,8 @@ def _kline_frame(
             # rescue path; run_with_provider must restart the whole dataset.
             raise
         except (TypeError, ValueError, KeyError, OSError, RuntimeError):
+            if market != "cn":
+                raise DataError(f"港美股标的 ({code}) 仅支持通过同花顺问财获取 K 线，不支持 AKShare 兜底")
             symbol = f"{exchange_for(code)}{code}"
             daily = ak_call(
                 ak.stock_zh_a_daily, symbol=symbol, start_date=day_key(start),
@@ -1435,6 +1484,8 @@ def technical_dataset(
 
 def chip_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
     code = stock_code(code_value)
+    if detect_market(code) != "cn":
+        raise DataError(f"筹码分布数据集仅支持 A 股标的，港美股标的 ({code}) 不支持通过 AKShare 兜底")
     frame = ak_call(ak.stock_cyq_em, symbol=code, adjust="")
     required = {"日期", "获利比例", "平均成本", "90成本-低", "90成本-高", "90集中度",
                 "70成本-低", "70成本-高", "70集中度"}
@@ -1461,6 +1512,8 @@ def chip_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
 
 def sentiment_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
     code = stock_code(code_value)
+    if detect_market(code) != "cn":
+        raise DataError(f"千股千评情绪数据集仅支持 A 股标的，港美股标的 ({code}) 不支持通过 AKShare 兜底")
     source_functions = {
         "score": ak.stock_comment_detail_zhpj_lspf_em,
         "focus": ak.stock_comment_detail_scrd_focus_em,
@@ -1510,6 +1563,8 @@ def sentiment_dataset(target: date, code_value: str, count: int) -> dict[str, An
 
 def stock_flow_dataset(target: date, code_value: str, period: int) -> dict[str, Any]:
     code = stock_code(code_value)
+    if detect_market(code) != "cn":
+        raise DataError(f"个股资金流数据集目前仅支持 A 股标的，港美股标的 ({code}) 不支持通过 AKShare 兜底")
     now = now_shanghai()
     if target != now.date():
         raise DataError("Stock fund flow rankings are current data and cannot be backfilled")
@@ -1548,6 +1603,8 @@ def stock_flow_dataset(target: date, code_value: str, period: int) -> dict[str, 
 
 def financial_dataset(target: date, code_value: str, statement: str, count: int) -> dict[str, Any]:
     code = stock_code(code_value)
+    if detect_market(code) != "cn":
+        raise DataError(f"财务报表数据集目前仅支持 A 股标的，港美股标的 ({code}) 不支持通过 AKShare 兜底")
     symbol = f"{exchange_for(code).upper()}{code}"
     functions = {"income": ak.stock_profit_sheet_by_report_em,
                  "balance_sheet": ak.stock_balance_sheet_by_report_em,
@@ -1593,6 +1650,8 @@ def financial_dataset(target: date, code_value: str, statement: str, count: int)
 
 def news_dataset(target: date, code_value: str, count: int) -> dict[str, Any]:
     code = stock_code(code_value)
+    if detect_market(code) != "cn":
+        raise DataError(f"个股新闻数据集目前仅支持 A 股标的，港美股标的 ({code}) 不支持通过 AKShare 兜底")
     frame = ak_call(ak.stock_news_em, symbol=code)
     seen: set[tuple[str, str]] = set()
     rows = []
@@ -2021,7 +2080,7 @@ def main() -> int:
                                  "dragon-tiger": "lhb", "dragon-tiger-institution": "lhb",
                                  "stock-flow": "stock-flow"}
             provider_dataset = raw_primary_kinds.get(args.kind or "", "")
-        write_json(run_with_provider(provider_dataset, builders[args.dataset]), args.output)
+        write_json(run_with_provider(provider_dataset, builders[args.dataset], target_code=args.code), args.output)
         return 0
     except Exception as exc:
         print(json.dumps({"status": "blocked", "dataset": args.dataset,

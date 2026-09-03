@@ -32,15 +32,13 @@ skills/market/.venv/bin/python skills/market/scripts/market_data.py DATASET --da
 export IWENCAI_API_KEY="your-api-key"
 ```
 
-API Key 可在 `https://www.iwencai.com/skillhub` 登录后获取。每次命令都会检测变量；未配置时在 stderr 提示配置方法并整批降级到 AKShare。问财请求失败、结构异常或数据不完整时同样整批降级，并在 JSON 标注 `provider_used`、`fallback` 和 `fallback_reason`。
-
-千股千评（`sentiment`）、筹码（`chips`）和新闻（`news`）等辅助数据继续使用 AKShare，不经过问财主源路由。
-
-问财空结果最多重试两次，重试使用 `retry` 类型；重试只放宽展示性措辞，不改变代码、日期、周期和复权约束。
+API Key 可在 `https://www.iwencai.com/skillhub` 登录后获取。每次命令都会检测变量；未配置时在 stderr 提示配置方法。
+**兜底边界原则**：
+- **A 股市场**：优先使用问财，未配置 Key 或接口失败时自动整批降级到 AKShare 兜底，并在 JSON 标注 `provider_used`、`fallback` 和 `fallback_reason`。
 
 任一命令返回非零状态时，读取错误并停止使用该数据，不把缺失数据解释为空数据。
 
-## 市场数据
+## 多市场与标的代码约定
 
 ```bash
 # 交易日历与证券主表
