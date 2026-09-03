@@ -1,79 +1,126 @@
 # mmtickerlab
 
-面向 A 股研究与模拟交易的 Claude Code 技能集合。项目通过 Python 脚本调用 [AKShare](https://github.com/akfamily/akshare) 获取市场数据，并使用 `uv` 管理环境。
+面向二级市场（A股/港美股）投研、量化分析与模拟交易的通用 Agent 技能库，适用于 Claude Code、OpenClaw 等多种智能体环境。
 
-这不是 Python 包或独立应用；所有命令都应在项目根目录运行。
+---
 
-## 技能
+## 技能一览 (Skills)
 
-- `market`：市场概览、涨跌排行、涨停池、资金流、个股行情、K 线、技术指标、财务数据与新闻。
-- `sim-trade`：带行情门禁、限价委托、部分成交、T+1 和 SQLite 审计账本的模拟交易。
-- `plan-review`：基于已校验快照生成盘前计划、盘中复盘和盘后复盘；数据不完整时停止生成。
-- `first-board-overnight`：基于可审计数据评估首板隔夜模拟策略，输出 BUY、WATCH、NO_TRADE 或数据阻断结论。
+仓库内包含 8 个标准化独立技能，各技能定位与入口说明如下：
 
-各技能的完整命令和约束见对应的 `SKILL.md`：
+| 层次 | 技能名称 (Slug) | 版本 | 核心功能与职能 | 核心文档 |
+|:---|:---|:---:|:---|:---|
+| **底层数据** | **`market`** | `1.0.0` | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜与财务数据。优先使用问财，AKShare 仅作 A 股兜底。 | [`skills/market/SKILL.md`](skills/market/SKILL.md) |
+| **步骤 1：事实** | **`market-intel`** | `1.0.0` | 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、板块资金流向及盘中大单，输出客观《市场情报快报》。只报事实，不给建议。 | [`skills/market-intel/SKILL.md`](skills/market-intel/SKILL.md) |
+| **步骤 2：研报** | **`asset-analysis`** | `1.0.0` | 标的量化投研 SOP（支持 A/港/美）。提取基本面真实 EPS，提供 PE/PEG/PB-ROE/PS/DCF 多模型目标市值测算及四维技术量化解析。 | [`skills/asset-analysis/SKILL.md`](skills/asset-analysis/SKILL.md) |
+| **步骤 3：门禁** | **`risk-guard`** | `1.0.0` | 量化信号校验与风控门禁 SOP。结合大势乘数校准自洽性，计算全仓与单标的仓位上限、动态止损线，行使**一票否决权（Veto Authority）**。 | [`skills/risk-guard/SKILL.md`](skills/risk-guard/SKILL.md) |
+| **宏观深度** | **`industry-research`** | `1.0.0` | 深度行业与产业链透视 SOP。五维透视产业链全景与价值链分配、生命周期与供需拐点、龙头对比矩阵及二级市场真实标的与 ETF 映射。 | [`skills/industry-research/SKILL.md`](skills/industry-research/SKILL.md) |
+| **垂直策略** | **`first-board-overnight`** | `1.0.0` | A 股首板隔夜决策专用交易策略。基于可审计数据评估首板赚钱效应与梯队，输出 BUY/WATCH/NO_TRADE 决策与 T+1 退出计划。 | [`skills/first-board-overnight/SKILL.md`](skills/first-board-overnight/SKILL.md) |
+| **执行审计** | **`sim-trade`** | `1.0.0` | A 股实盘级模拟交易撮合引擎。带严格数据完整性门禁、限价委托、五档盘口真实撮合、T+1 规则与 SQLite 可审计流水账本。 | [`skills/sim-trade/SKILL.md`](skills/sim-trade/SKILL.md) |
+| **流程闭环** | **`plan-review`** | `1.0.0` | 基于已校验快照生成盘前计划、午间复盘和收盘复盘的三段式操作系统。数据不完整时立即阻断，不创建报告。 | [`skills/plan-review/SKILL.md`](skills/plan-review/SKILL.md) |
 
-- [`skills/market/SKILL.md`](skills/market/SKILL.md)
-- [`skills/sim-trade/SKILL.md`](skills/sim-trade/SKILL.md)
-- [`skills/plan-review/SKILL.md`](skills/plan-review/SKILL.md)
-- [`skills/first-board-overnight/SKILL.md`](skills/first-board-overnight/SKILL.md)
+---
+
+## 投研与交易工作流（Pipeline）
+
+各技能之间既可独立按需触发，亦可组成端到端的决策流水线：
+
+```mermaid
+flowchart TD
+    subgraph 宏观与情报
+        A["industry-research<br/>(产业链透视与价值分配)"] -.-> B["market-intel<br/>(盘前宏观要闻/隔夜外盘/资金流)"]
+    end
+
+    subgraph 标的研究与估值
+        B --> C["asset-analysis<br/>(真实EPS + 多模型目标市值估算 + 四维指标)"]
+    end
+
+    subgraph 量化核验与风控
+        C --> D["risk-guard<br/>(信号自洽性核验 + 大势仓位乘数 + 动态止损)"]
+    end
+
+    subgraph 执行与复盘
+        D -->|通过风控门禁| E["first-board-overnight / 投资决策"]
+        E --> F["sim-trade<br/>(A股T+1限价撮合与SQLite账本)"]
+        D -->|触发VETO红线| X["安全阻断中止<br/>(拒绝开仓，保全本金)"]
+        F --> G["plan-review<br/>(盘前计划 -> 午间复盘 -> 收盘复盘)"]
+    end
+
+    market[("skills/market<br/>(底层确定性数据底座)")] ===> B
+    market ===> C
+    market ===> D
+    market ===> F
+    market ===> G
+```
+
+---
 
 ## 环境初始化
 
-项目使用 `uv`，`market` 和 `sim-trade` 分别维护自己的虚拟环境与依赖：
+项目使用 `uv`，各核心引擎独立维护虚拟环境与依赖：
 
 ```bash
+# 1. 初始化市场数据引擎环境
 uv venv skills/market/.venv
 uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 
+# 2. 初始化 A 股模拟交易撮合引擎环境
 uv venv skills/sim-trade/.venv
 uv pip install --python skills/sim-trade/.venv -r skills/sim-trade/requirements.txt
 ```
 
-`plan-review` 工作流本身只依赖 Python 标准库，采集数据时会调用 `market` 的环境。
+> `plan-review`、`first-board-overnight` 等工作流通过子进程调用 `skills/market/.venv`。
 
-## 使用示例
+---
+
+## 核心数据指令示例
+
+所有 CLI 命令均从项目根目录运行：
 
 ```bash
-# 市场收盘数据
-skills/market/.venv/bin/python skills/market/scripts/market_data.py snapshot --date YYYYMMDD --session close
+# 1. 市场情报：获取隔夜外盘（美股三大指数、A50、美元汇率）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py overnight --date YYYYMMDD
 
-# 个股技术指标数据
-skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code 600519 --count 10
+# 2. 市场情报：获取全市场涨跌停池与连板梯队
+skills/market/.venv/bin/python skills/market/scripts/market_data.py limits --date YYYYMMDD --session close
 
-# 查看模拟账户持仓
+# 3. 标的分析：获取个股实时行情（支持 A 股、港股如 00700、美股如 AAPL）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py quote --date YYYYMMDD --code 600519
+
+# 4. 标的分析：获取 20+ 项确定性量化技术指标（日线前复权）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code 600519 --count 10 --adjust qfq
+
+# 5. 标的分析：获取真实利润表（含 basic_eps 每股收益与归母净利润）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code 600519 --statement income --count 4
+
+# 6. 模拟交易：审查账户资产与持仓
 skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/simtrade.py portfolio
 
-# 准备盘前报告数据包
-python3 skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
+# 7. 流程复盘：准备盘前报告数据包
+skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
 ```
 
-## 数据目录
+---
 
-- `data/watchlist.json`：自选股列表。
-- `data/stock_names.json`：股票名称缓存。
-- `skills/market/data/`：行情缓存与报告快照。
-- `skills/market/data/market_raw.db`：可按标的和时间查询的原始行情、K 线及其他明细数据库。
-- `skills/sim-trade/data/simulation.db`：模拟交易账户、订单、成交与账本。
-- `skills/plan-review/data/YYYYMMDD/`：盘前、盘中和盘后数据包。
-- `report/`：生成的计划与复盘报告。
+## 核心系统约束与设计原则（System Rules）
 
-## 关键约束
+1. **数据确定性与完整性保障（Data Integrity & Determinism）**：
+   - 坚持数据真实性与可复现性，量化指标与财务估值严格基于真实行情与财报基数；
+   - 具备多级数据校验与自动兜底机制，关键数据缺失时触发 Fail-Fast 安全阻断，确保投研分析与交易回测的严谨性与审计合规。
+2. **AKShare 仅限 A 股兜底**：
+   - 港美股标的数据严格经由同花顺问财获取；若未配置问财 API Key 或接口异常，立即安全阻断，不跨市场兜底。
+3. **模拟交易（`sim-trade`）A 股专用**：
+   - 严格执行沪深京 A 股 6 位代码校验、T+1 交割制度与五档盘口真实撮合，输入港美股代码直接拒单。
+4. **复盘数据不可回填**：
+   - 全市场快照必须在规定时间窗口（午间 11:30-13:00，收盘 15:05 后）原子采集，禁止用后验数据回填历史截面。
 
-- Market 只输出 JSON 数据，不生成市场结论、报告或交易建议。
-- 每个数据提供模块都必须先导入 `akshare_patch`，再导入 AKShare。
-- 东方财富接口由 `akshare_patch.py` 通过 `curl_cffi` 和重试机制处理 TLS 限制。
-- 模拟交易没有 `--force`：行情、交易日历或五档盘口不完整时，不会撮合订单。
-- 复盘报告必须通过 `capture`、`prepare` 和 `validate` 数据门禁，不能用当前数据回填历史快照。
+---
 
-## Claude Code 注册
+## 目录结构说明
 
-`skills.json` 注册 `market`、`sim-trade`、`plan-review` 和 `first-board-overnight`。将它加入 Claude Code 配置，并把路径替换为本仓库的实际位置：
-
-```json
-{
-  "inherits": [
-    { "path": "/path/to/mmtickerlab/skills.json" }
-  ]
-}
-```
+- `skills/`：8 大 OpenClaw 标准技能实现与规范说明（各目录下含 `SKILL.md`）。
+- `skills/market/data/cache.db`：高频实时行情 TTL 缓存数据库（具备交易时间智能感知与跨夜保活）。
+- `skills/market/data/market_raw.db`：不可变历史观测明细与 K 线 SQLite 存储库（SHA-256 内容去重）。
+- `skills/sim-trade/data/simulation.db`：模拟交易账户、委托挂单、成交记录与可审计审计流水。
+- `skills/plan-review/data/YYYYMMDD/`：盘前、盘中与盘后快照证据包。
+- `report/`：生成的各阶段投研计划、复盘报告与行业深度研报。
