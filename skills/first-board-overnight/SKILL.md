@@ -1,5 +1,6 @@
 ---
 name: first-board-overnight
+version: 1.0.0
 description: 基于可审计 A 股数据执行首板隔夜模拟策略的决策技能。用于评估当日首板赚钱效应、筛选首板候选、生成带证据的 BUY、WATCH 或 NO_TRADE 决策、制定 T+1 退出计划，以及复盘模拟交易案例。必须与 market、sim-trade 和 plan-review 配合；不用于实盘交易、长期价值投资、无可靠快照的历史回测或把第三方交易经验冒充确定规则。
 ---
 

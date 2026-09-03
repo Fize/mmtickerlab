@@ -1,0 +1,150 @@
+---
+name: asset-analysis
+version: 1.0.0
+description: 个股及 ETF 标的基本面与技术面综合分析 SOP（支持 A 股、港股及美股）。融合 EPS 核算、多模型目标市值测算、财务报表、20+ 项确定性量化技术指标及大势环境校准，输出标准化《标的量化投研报告》。
+---
+
+# Asset Analysis — 标的基本面与技术面量化分析
+
+本技能作为投研流水线的第二步（标的深分析）。核心原则：**基本面定质地、多模型定市值、技术面定点位、大势定权值**。
+
+---
+
+## 零虚构与数据真实性铁律（Zero-Fabrication Data Gate）
+
+1. **真实数据唯一原则**：报告中引用的 OHLC 价格、成交量额、最新 EPS、净利润、净资产、营收及 20+ 项技术指标必须 100% 为真实数据。
+2. **多级真实数据获取路径**：
+   - 第一优先：执行 `skills/market/.venv/bin/python skills/market/scripts/market_data.py` 对应子命令；
+   - 第二优先：若命令缺少某些海外字段或暂时不可用，必须使用 `search_web` / `read_url_content` / `tencent-news` / `agent-browser` 检索官方财报或交易所权威数据。
+3. **缺失即阻断（Fail-Fast）**：若通过上述所有途径均无法获取到标的的关键真实财务（EPS/净利润）或行情数据，**必须立即终止研报生成**，直接告知用户：“由于无法获取 [标的代码] 的真实财报/行情数据，研报已安全阻断，拒绝提供未经证实的伪分析”。**绝对禁止凭空捏造 EPS 或假设虚构市值！**
+
+---
+
+## 标的识别与真实数据采集
+
+根据标的代码（A 股 6 位数字如 `600519`；港股 5 位数字如 `00700`；美股大写字母如 `AAPL`），按需运行以下命令：
+
+### 1. 通用行情与指标指令（A 股 / 港股 / 美股）
+
+```bash
+# 实时行情（最新价、涨跌幅、OHLC、成交量额）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py quote --date YYYYMMDD --code CODE
+
+# 历史 K 线（日/周/月/分钟，默认 120 条日线，前复权）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period daily --count 120 --adjust qfq
+
+# 20+ 项确定性量化技术指标（基于至少 250 行预热数据计算）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 10 --adjust qfq
+```
+
+### 2. 基本面财务数据指令（A 股直接支持，港美股财报检索兜底）
+
+```bash
+# 利润表（包含 basic_eps 每股收益、parent_netprofit 归母净利润、total_operate_income 营业收入及同比增速）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement income --count 4
+
+# 资产负债表（total_parent_equity 归母净资产、total_assets 总资产、total_liabilities 总负债）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement balance_sheet --count 4
+
+# 现金流量表（经营/投资/筹资净现金流）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement cashflow --count 4
+
+# 筹码分布与资金流（A 股专属）
+skills/market/.venv/bin/python skills/market/scripts/market_data.py chips --date YYYYMMDD --code CODE --count 10
+skills/market/.venv/bin/python skills/market/scripts/market_data.py stock-flow --date YYYYMMDD --code CODE --flow-period 5
+```
+
+---
+
+## 基本面 EPS 与多模型市值估值体系
+
+必须基于真实财报基数，使用**不少于 3 种主流估值模型**对标的进行理论目标市值测算：
+
+### 1. 核心每股收益（EPS）与盈利基数
+- **基本每股收益 (Basic EPS)**：从利润表直接提取最新季度/半年/年报数据；
+- **TTM 每股收益 (EPS_TTM)**：滚动 12 个月累计 EPS，作为市盈率核算基准；
+- **总股本与基准市值**：当前总市值 = 当前股价 × 总股本。
+
+### 2. 多模型目标市值测算方法
+
+| 估值模型 | 适用企业类型 | 核心计算公式 | 关键假定依据 |
+|---|---|---|---|
+| **PE 相对估值法** | 盈利稳定、商业模式成熟的企业（如白酒、家电、公用事业） | $\text{目标市值} = \text{净利润 (EPS} \times \text{总股本)} \times \text{合理 PE}$ | 参考行业历史 3/5 年估值中位数或同业头部对标 |
+| **PEG 成长估值法** | 高成长且业绩增速可预期的成长股（如消费电子、高端制造） | $\text{目标市值} = \text{净利润} \times (g \times 100 \times \text{基准 PEG})$ | 假定基准 PEG=1.0（合理），以净利润复合增速 $g$ 修正 PE |
+| **PB-ROE 资产估值法** | 周期性、重资产、金融地产及公用事业等依靠资产驱动的企业 | $\text{目标市值} = \text{归母净资产} \times \text{合理 PB}$ | 根据 ROE 水平测算合理 PB 溢价（$\text{合理 PB} \approx \text{ROE} / (\text{COE} - g)$） |
+| **PS 市销率法** | 处于高研发、高扩张期、微利或尚未实现大额盈利的新兴科技/SaaS/创新药 | $\text{目标市值} = \text{营业收入} \times \text{合理 PS}$ | 参考同类业务 SaaS 续约率或创新药商业化倍数 |
+| **简化 DCF / 自由现金流折现** | 现金流充沛且资本开支稳定的成熟价值股 | $\text{内在价值} = \sum \frac{\text{FCF}_t}{(1+\text{WACC})^t} + \frac{\text{TV}}{(1+\text{WACC})^n}$ | 基于自由现金流、WACC（如 8%~10%）及永续增长率（2%~3%） |
+
+### 3. 三档情景分析（Scenario Analysis）
+综合多种模型，给出不同市场情绪与业绩兑现预期下的市值与股价区间：
+- **🔴 悲观情景（Downside）**：估值乘数按历史低位（20% 分位）测算；
+- **🟡 中性情景（Base Case）**：估值乘数按行业合理中位数测算；
+- **🟢 乐观情景（Upside）**：估值乘数按景气高位（75%~80% 分位）测算。
+
+---
+
+## 四维技术量化解析体系
+
+利用 `technical` 数据集输出的确定性数值，从四个维度进行客观评价：
+
+| 维度 | 指标项 | 研判重点 |
+|---|---|---|
+| **趋势层** | SMA (5/10/20/60/120/250), EMA, MACD (DIF/DEA/Bar) | 多空排列状态、均线支撑/压力、MACD 零轴上下金叉/死叉 |
+| **动量层** | RSI (6/12/24), KDJ (K/D/J), CCI, WR | 超买（RSI>70/J>100）与超跌（RSI<30/J<0）、顶背离/底背离信号 |
+| **波动层** | 布林带 (BOLL_MID/UP/LB), ATR | 带状通道收口/开口、价格越界、ATR 波动真实振幅 |
+| **量能层** | VWMA (量加权均线), MFI (资金流量指标) | 量价配合度（增量上涨/缩量回调）及资金沉淀状态 |
+
+---
+
+## 大势环境校准（Market Regime Calibration）
+
+相同的技术信号在不同大势下含义截然不同，必须结合当前市场状态校准权重：
+
+- **牛市 / 强势阶段**：技术超买降权，趋势突破升权；
+- **震荡 / 盘整阶段**：维持标准权重，重视高抛低吸与布林带边界；
+- **熊市 / 弱势阶段**：所有看多信号降权，严禁盲目抄底，阻力位预警升权。
+
+---
+
+## 输出规范：标的量化投研报告（Asset Analysis Profile）
+
+```markdown
+# [标的量化投研报告] {代码} ({名称})
+
+## 1. 标的基础画像与价格概览
+- **标的代码/市场**：{CODE} ({EXCHANGE})
+- **最新价格**：{LAST} ({CHANGE_PCT}%)
+- **当日 OHLC**：今开 {OPEN} / 最高 {HIGH} / 最低 {LOW} / 昨收 {PRE_CLOSE}
+- **成交量额**：成交量 {VOLUME} / 成交额 {TURNOVER}
+- **总股本与当前市值**：总股本 [N] 亿股，当前总市值 [N] 亿元
+
+## 2. 基本面核心指标与 EPS 核算
+- **最新每股收益 (Basic EPS)**：{BASIC_EPS} 元/股 [E01]
+- **归母净利润**：{PARENT_NETPROFIT} 亿元 (同比增速: {PARENT_NETPROFIT_YOY}%) [E02]
+- **营业总收入**：{TOTAL_OPERATE_INCOME} 亿元 (同比增速: {TOTAL_OPERATE_INCOME_YOY}%) [E03]
+- **净资产与 ROE**：归母净资产 {PARENT_EQUITY} 亿元，当前年化/加权 ROE {ROE}%
+- **筹码结构 (A股)**：平均成本 {AVG_COST}，90% 集中度 {CONC_90}
+
+## 3. 多模型目标市值估算与情景测算
+| 估值模型 | 关键参数/乘数假定 | 测算目标市值 (亿元) | 折合目标股价 (元) | 空间/折溢价 |
+|---|---|---|---|---|
+| **模型一：PE 相对估值法** | 行业合理 PE=[N] 倍 | [计算值] | [计算值] | [相对现价 %] |
+| **模型二：PEG 成长估值法** | 预期增速 g=[N]%, PEG=1.0 | [计算值] | [计算值] | [相对现价 %] |
+| **模型三：PB-ROE / PS 法** | 合理 PB=[N] 倍 / PS=[N] 倍 | [计算值] | [计算值] | [相对现价 %] |
+
+### 综合情景目标区间
+- 🔴 **悲观预期 (Downside)**：目标市值 {VAL_LOW} 亿元，对应目标价 {PRICE_LOW} 元
+- 🟡 **中性预期 (Base Case)**：目标市值 {VAL_MID} 亿元，对应目标价 {PRICE_MID} 元
+- 🟢 **乐观预期 (Upside)**：目标市值 {VAL_HIGH} 亿元，对应目标价 {PRICE_HIGH} 元
+
+## 4. 技术面四维量化解析
+- **趋势维度**：均线排列 [多头/空头/缠绕]，MACD DIF={DIF}, DEA={DEA}
+- **动量维度**：RSI_6={RSI_6}, KDJ_J={KDJ_J}，处于 [正常/超买/超卖] 区域
+- **波动维度**：BOLL 上轨 {BOLL_UP} / 下轨 {BOLL_LB}，当前位置 {POSITION_PCT}%
+- **量能维度**：VWMA={VWMA}，量价呈现 [配合/背离]
+
+## 5. 关键技术点位与大势校准
+- **强支撑位**：[如 SMA_20 或前低点位]
+- **核心压力位**：[如 BOLL 上轨或前高点位]
+- **环境校准结论**：当前大势处于 [{REGIME}]，综合估值与技术形态评价：[总结]
+```

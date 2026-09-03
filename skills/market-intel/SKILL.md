@@ -1,0 +1,82 @@
+---
+name: market-intel
+version: 1.0.0
+description: 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、行业动态、板块资金流向及大单异动，输出标准化《市场情报快报》。只陈述客观事实，不夹带交易观点或操作建议。
+---
+
+# Market Intel — 市场情报与资讯扫描
+
+本技能作为投研流水线的第一步（消息面与情报扫描）。核心原则：**只陈述客观事实，不夹带主观推测或交易建议**。
+
+---
+
+## 零虚构与数据真实性铁律（Zero-Fabrication Data Gate）
+
+1. **真实数据唯一原则**：情报快报中的所有要闻、指数数值、汇率及资金流向金额必须 100% 真实。
+2. **多级真实数据获取路径**：
+   - 第一优先：执行 `skills/market/.venv/bin/python skills/market/scripts/market_data.py` 对应子命令；
+   - 第二优先：若命令报错或暂时不可用，必须使用 `search_web` / `read_url_content` / `tencent-news` / `agent-browser` 检索权威新闻与市场数据。
+3. **缺失即阻断（Fail-Fast）**：若通过上述所有途径均无法获取到所需的关键真实数据，**必须立即终止报告生成**，直接告知用户：“由于无法获取 [具体缺失数据]，市场情报快报已安全阻断，拒绝提供未经证实的伪信息”。**绝对禁止凭空编造、脑补或填充任何虚假新闻与数值！**
+
+---
+
+## 情报收集与数据指令
+
+在生成情报快报前，按需执行以下真实数据采集命令：
+
+| 场景 | 数据指令 | 说明 |
+|---|---|---|
+| **隔夜外盘与汇率** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py overnight --date YYYYMMDD` | 美股三大指数、富时 A50 实时截面与美元人民币汇率 |
+| **全市场涨跌停/连板** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py limits --date YYYYMMDD --session close` | 涨停池、炸板率、跌停池与连板梯队 |
+| **行业/概念资金流** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py flows --date YYYYMMDD --session close` | 行业与概念 1/3/5 日资金净流入/流出排行 |
+| **盘中大单异动** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py big-deals --date YYYYMMDD` | 针对特定时点的市场大单成交结构 |
+| **个股针对性新闻** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py news --date YYYYMMDD --code CODE --count 5` | 指定标的最新新闻原文明细 |
+
+对于广度宏观政策、即时热点资讯，可结合外部 `tencent-news` 或 `agent-browser` 进行补充抓取。
+
+---
+
+## 情报归类与打标
+
+获取到的每一条情报需进行四维打标：
+
+1. **资产类别**：A 股 / 港股 / 美股 / ETF / 期货 / 大宗商品 / 宏观
+2. **区域范围**：中国 / 美国 / 欧洲 / 亚太 / 全球
+3. **影响方向**：正面（Positive） / 负面（Negative） / 中性（Neutral）
+4. **重要程度**：
+   - 🔴 **高（High）**：直接影响大盘开盘或板块整体走势（如央行重磅政策、美股大跌、重大行业催化）；
+   - 🟡 **中（Medium）**：影响特定行业或个股（如财报发布、巨额大单、公司公告）；
+   - 🔵 **低（Low）**：常规行业背景资讯。
+
+---
+
+## 输出规范：市场情报快报（Market Intel Briefing）
+
+根据采集的数据，输出以下格式的 Markdown 快报：
+
+```markdown
+# [市场情报快报] YYYY-MM-DD
+
+## 1. 🔴 重点要闻与宏观截面
+| 时间/时点 | 资产/区域 | 核心事实摘要 | 数据源 | 影响方向 |
+|---|---|---|---|---|
+| 09:15 | 宏观/中国 | [核心事实描述，注明证据引用] | tencent-news | 中性 |
+
+## 2. 隔夜外盘与跨市场截面
+- **美股三大指数**：道琼斯 [E01], 标普500 [E02], 纳斯达克 [E03]
+- **富时中国 A50**：[A50 时点最新价/涨跌幅]
+- **外汇市场**：USD/CNY [汇率最新值]
+
+## 3. 🟡 资金流向与市场结构
+- **主力资金净流入 Top 5**：[行业/概念名称 (金额)]
+- **主力资金净流出 Top 5**：[行业/概念名称 (金额)]
+- **涨跌停与连板梯队**：涨停 [N] 家，炸板率 [N]%，最高连板高度 [N] 板
+
+## 4. 🔵 关注动态与个股异动
+- [个股大单成交/重大公告/新闻摘要]
+```
+
+### 质量约束
+- **严禁预测**：不使用“预计看涨”、“必将反弹”等主观词汇；
+- **真实引用**：量化数值一律引用采集结果，不捏造数据；
+- **源头清晰**：标注每一个信息点的来源接口或工具。

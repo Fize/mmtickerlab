@@ -214,7 +214,7 @@ def detect_market(value: Any) -> str:
         return "hk"
     if len(clean) == 6 and clean.isdigit():
         return "cn"
-    if clean.isalpha():
+    if clean.isascii() and clean.isalpha():
         return "us"
     return "cn"
 
