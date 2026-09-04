@@ -6,10 +6,11 @@
 
 ## 技能一览 (Skills)
 
-仓库内包含 8 个标准化独立技能，各技能定位与入口说明如下：
+仓库内包含 9 个标准化独立技能，各技能定位与入口说明如下：
 
 | 层次 | 技能名称 (Slug) | 版本 | 核心功能与职能 | 核心文档 |
 |:---|:---|:---:|:---|:---|
+| **并行流水线** | **`pipeline`** | `1.0.0` | 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。数据缺失时严格终止阻断。 | [`pipeline/SKILL.md`](pipeline/SKILL.md) |
 | **底层数据** | **`market`** | `1.0.0` | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜与财务数据。优先使用问财，AKShare 仅作 A 股兜底。 | [`market/SKILL.md`](market/SKILL.md) |
 | **步骤 1：事实** | **`market-intel`** | `1.0.0` | 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、板块资金流向及盘中大单，输出客观《市场情报快报》。只报事实，不给建议。 | [`market-intel/SKILL.md`](market-intel/SKILL.md) |
 | **步骤 2：研报** | **`asset-analysis`** | `1.0.0` | 标的量化投研 SOP（支持 A/港/美）。提取基本面真实 EPS，提供 PE/PEG/PB-ROE/PS/DCF 多模型目标市值测算及四维技术量化解析。 | [`asset-analysis/SKILL.md`](asset-analysis/SKILL.md) |
@@ -23,34 +24,31 @@
 
 ## 投研与交易工作流（Pipeline）
 
-各技能之间既可独立按需触发，亦可组成端到端的决策流水线：
+各技能之间既可独立按需触发，亦可通过 `pipeline` 组成多 Agent 并行的端到端决策流水线：
 
 ```mermaid
 flowchart TD
-    subgraph 宏观与情报
-        A["industry-research<br/>(产业链透视与价值分配)"] -.-> B["market-intel<br/>(盘前宏观要闻/隔夜外盘/资金流)"]
+    subgraph 并行投研流水线 ["pipeline (多 Agent 并行投研流水线)"]
+        direction TB
+        subgraph Phase1 ["第一阶段：并发深度调研"]
+            P1A["fundamental-valuation-agent<br/>(真实EPS/多模型市值/技术面)"]
+            P1B["market-heat-agent<br/>(筹码集中度/主力资金流/龙虎榜)"]
+            P1C["intel-news-agent<br/>(宏观政策/行业热度/公司事件)"]
+        end
+        P1A & P1B & P1C --> Synth["第二阶段：决策评级合成<br/>(三档市值测算 + 初始买卖评级)"]
+        Synth --> Phase3["第三阶段：risk-guard-agent<br/>(量化自洽核验 + 大势乘数 + 一票否决门禁)"]
     end
 
-    subgraph 标的研究与估值
-        B --> C["asset-analysis<br/>(真实EPS + 多模型目标市值估算 + 四维指标)"]
+    Phase3 -->|VETO: PASSED| Report["《标的全维度投研与风控决策总报》"]
+    Phase3 -->|VETO: BLOCKED| Blocked["《风控阻断安全警示》<br/>(强制观望/减仓)"]
+
+    subgraph 独立执行与复盘 ["独立执行与复盘 (可选闭环)"]
+        Report -.-> E["first-board-overnight / 投资执行"]
+        E -.-> F["sim-trade<br/>(A股T+1限价撮合与账本)"]
+        F -.-> G["plan-review<br/>(三段式盘前午间收盘复盘)"]
     end
 
-    subgraph 量化核验与风控
-        C --> D["risk-guard<br/>(信号自洽性核验 + 大势仓位乘数 + 动态止损)"]
-    end
-
-    subgraph 执行与复盘
-        D -->|通过风控门禁| E["first-board-overnight / 投资决策"]
-        E --> F["sim-trade<br/>(A股T+1限价撮合与SQLite账本)"]
-        D -->|触发VETO红线| X["安全阻断中止<br/>(拒绝开仓，保全本金)"]
-        F --> G["plan-review<br/>(盘前计划 -> 午间复盘 -> 收盘复盘)"]
-    end
-
-    market[("market<br/>(底层确定性数据底座)")] ===> B
-    market ===> C
-    market ===> D
-    market ===> F
-    market ===> G
+    market[("market<br/>(底层确定性数据底座)")] ===> P1A & P1B & P1C & Phase3
 ```
 
 ---
