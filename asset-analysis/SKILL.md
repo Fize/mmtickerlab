@@ -14,7 +14,7 @@ description: 个股及 ETF 标的基本面与技术面综合分析 SOP（支持 
 
 1. **真实数据唯一原则**：报告中引用的 OHLC 价格、成交量额、最新 EPS、净利润、净资产、营收及 20+ 项技术指标必须 100% 为真实数据。
 2. **多级真实数据获取路径**：
-   - 第一优先：执行 `skills/market/.venv/bin/python skills/market/scripts/market_data.py` 对应子命令；
+   - 第一优先：执行 `market/.venv/bin/python market/scripts/market_data.py` 对应子命令；
    - 第二优先：若命令缺少某些海外字段或暂时不可用，必须使用 `search_web` / `read_url_content` / `tencent-news` / `agent-browser` 检索官方财报或交易所权威数据。
 3. **缺失即阻断（Fail-Fast）**：若通过上述所有途径均无法获取到标的的关键真实财务（EPS/净利润）或行情数据，**必须立即终止研报生成**，直接告知用户：“由于无法获取 [标的代码] 的真实财报/行情数据，研报已安全阻断，拒绝提供未经证实的伪分析”。**绝对禁止凭空捏造 EPS 或假设虚构市值！**
 
@@ -28,30 +28,30 @@ description: 个股及 ETF 标的基本面与技术面综合分析 SOP（支持 
 
 ```bash
 # 实时行情（最新价、涨跌幅、OHLC、成交量额）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py quote --date YYYYMMDD --code CODE
+market/.venv/bin/python market/scripts/market_data.py quote --date YYYYMMDD --code CODE
 
 # 历史 K 线（日/周/月/分钟，默认 120 条日线，前复权）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period daily --count 120 --adjust qfq
+market/.venv/bin/python market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period daily --count 120 --adjust qfq
 
 # 20+ 项确定性量化技术指标（基于至少 250 行预热数据计算）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 10 --adjust qfq
+market/.venv/bin/python market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 10 --adjust qfq
 ```
 
 ### 2. 基本面财务数据指令（A 股直接支持，港美股财报检索兜底）
 
 ```bash
 # 利润表（包含 basic_eps 每股收益、parent_netprofit 归母净利润、total_operate_income 营业收入及同比增速）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement income --count 4
+market/.venv/bin/python market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement income --count 4
 
 # 资产负债表（total_parent_equity 归母净资产、total_assets 总资产、total_liabilities 总负债）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement balance_sheet --count 4
+market/.venv/bin/python market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement balance_sheet --count 4
 
 # 现金流量表（经营/投资/筹资净现金流）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement cashflow --count 4
+market/.venv/bin/python market/scripts/market_data.py financials --date YYYYMMDD --code CODE --statement cashflow --count 4
 
 # 筹码分布与资金流（A 股专属）
-skills/market/.venv/bin/python skills/market/scripts/market_data.py chips --date YYYYMMDD --code CODE --count 10
-skills/market/.venv/bin/python skills/market/scripts/market_data.py stock-flow --date YYYYMMDD --code CODE --flow-period 5
+market/.venv/bin/python market/scripts/market_data.py chips --date YYYYMMDD --code CODE --count 10
+market/.venv/bin/python market/scripts/market_data.py stock-flow --date YYYYMMDD --code CODE --flow-period 5
 ```
 
 ---

@@ -14,7 +14,7 @@ description: 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘
 
 1. **真实数据唯一原则**：情报快报中的所有要闻、指数数值、汇率及资金流向金额必须 100% 真实。
 2. **多级真实数据获取路径**：
-   - 第一优先：执行 `skills/market/.venv/bin/python skills/market/scripts/market_data.py` 对应子命令；
+   - 第一优先：执行 `market/.venv/bin/python market/scripts/market_data.py` 对应子命令；
    - 第二优先：若命令报错或暂时不可用，必须使用 `search_web` / `read_url_content` / `tencent-news` / `agent-browser` 检索权威新闻与市场数据。
 3. **缺失即阻断（Fail-Fast）**：若通过上述所有途径均无法获取到所需的关键真实数据，**必须立即终止报告生成**，直接告知用户：“由于无法获取 [具体缺失数据]，市场情报快报已安全阻断，拒绝提供未经证实的伪信息”。**绝对禁止凭空编造、脑补或填充任何虚假新闻与数值！**
 
@@ -26,11 +26,11 @@ description: 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘
 
 | 场景 | 数据指令 | 说明 |
 |---|---|---|
-| **隔夜外盘与汇率** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py overnight --date YYYYMMDD` | 美股三大指数、富时 A50 实时截面与美元人民币汇率 |
-| **全市场涨跌停/连板** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py limits --date YYYYMMDD --session close` | 涨停池、炸板率、跌停池与连板梯队 |
-| **行业/概念资金流** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py flows --date YYYYMMDD --session close` | 行业与概念 1/3/5 日资金净流入/流出排行 |
-| **盘中大单异动** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py big-deals --date YYYYMMDD` | 针对特定时点的市场大单成交结构 |
-| **个股针对性新闻** | `skills/market/.venv/bin/python skills/market/scripts/market_data.py news --date YYYYMMDD --code CODE --count 5` | 指定标的最新新闻原文明细 |
+| **隔夜外盘与汇率** | `market/.venv/bin/python market/scripts/market_data.py overnight --date YYYYMMDD` | 美股三大指数、富时 A50 实时截面与美元人民币汇率 |
+| **全市场涨跌停/连板** | `market/.venv/bin/python market/scripts/market_data.py limits --date YYYYMMDD --session close` | 涨停池、炸板率、跌停池与连板梯队 |
+| **行业/概念资金流** | `market/.venv/bin/python market/scripts/market_data.py flows --date YYYYMMDD --session close` | 行业与概念 1/3/5 日资金净流入/流出排行 |
+| **盘中大单异动** | `market/.venv/bin/python market/scripts/market_data.py big-deals --date YYYYMMDD` | 针对特定时点的市场大单成交结构 |
+| **个股针对性新闻** | `market/.venv/bin/python market/scripts/market_data.py news --date YYYYMMDD --code CODE --count 5` | 指定标的最新新闻原文明细 |
 
 对于广度宏观政策、即时热点资讯，可结合外部 `tencent-news` 或 `agent-browser` 进行补充抓取。
 

@@ -17,14 +17,14 @@ description: A股专用的确定性模拟交易系统。具备严格的数据真
 ## 环境准备
 
 ```bash
-uv venv skills/sim-trade/.venv
-uv pip install --python skills/sim-trade/.venv -r skills/sim-trade/requirements.txt
+uv venv sim-trade/.venv
+uv pip install --python sim-trade/.venv -r sim-trade/requirements.txt
 ```
 
 命令前缀：
 
 ```bash
-skills/sim-trade/.venv/bin/python skills/sim-trade/scripts/simtrade.py
+sim-trade/.venv/bin/python sim-trade/scripts/simtrade.py
 ```
 
 需要机器可读输出时在前加入 `--json` 参数。

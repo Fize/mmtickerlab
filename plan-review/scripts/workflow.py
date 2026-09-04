@@ -19,12 +19,39 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[3]
 SKILL_DIR = Path(__file__).resolve().parents[1]
-MARKET_PYTHON = ROOT / "skills" / "market" / ".venv" / "bin" / "python"
-MARKET_SCRIPT = ROOT / "skills" / "market" / "scripts" / "market_data.py"
-DATA_DIR = SKILL_DIR / "data"
+ROOT = Path.cwd()
 REPORT_DIR = ROOT / "report"
+DATA_DIR = SKILL_DIR / "data"
+
+
+def find_market_dir() -> Path:
+    if "MARKET_SKILL_DIR" in os.environ:
+        return Path(os.environ["MARKET_SKILL_DIR"]).resolve()
+    sibling = SKILL_DIR.parent / "market"
+    if sibling.exists():
+        return sibling
+    for candidate in [ROOT / "market", ROOT / "skills" / "market"]:
+        if candidate.exists():
+            return candidate
+    for parent in SKILL_DIR.parents:
+        if (parent / "market").exists():
+            return parent / "market"
+        if (parent / "skills" / "market").exists():
+            return parent / "skills" / "market"
+    return sibling
+
+
+def resolve_market_python(market_dir: Path) -> Path:
+    venv_py = market_dir / ".venv" / "bin" / "python"
+    if venv_py.exists():
+        return venv_py
+    return Path(sys.executable)
+
+
+MARKET_DIR = find_market_dir()
+MARKET_PYTHON = resolve_market_python(MARKET_DIR)
+MARKET_SCRIPT = MARKET_DIR / "scripts" / "market_data.py"
 
 PHASE_LABEL = {"pre": "盘前计划", "noon": "盘中复盘", "post": "盘后复盘"}
 TEMPLATE_NAME = {"pre": "pre_market.md", "noon": "intraday_review.md", "post": "post_market.md"}
@@ -77,10 +104,9 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def market_call(dataset: str, day: str, **options: Any) -> dict[str, Any]:
-    if not MARKET_PYTHON.exists():
+    if not MARKET_SCRIPT.exists():
         raise WorkflowError(
-            "market 虚拟环境不存在；先运行 uv venv skills/market/.venv，"
-            "再安装 skills/market/requirements.txt"
+            f"market 脚本未找到：{MARKET_SCRIPT}；请确认 market 技能已就绪或设置 MARKET_SKILL_DIR"
         )
     command = [str(MARKET_PYTHON), str(MARKET_SCRIPT), dataset, "--date", day]
     for key, value in options.items():

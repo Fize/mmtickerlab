@@ -30,8 +30,8 @@ description: 基于已校验 AKShare/问财数据生成盘前计划、盘中复�
 所有命令从项目根目录运行。数据采集使用 market 技能自己的环境；工作流脚本只依赖 Python 标准库。
 
 ```bash
-uv venv skills/market/.venv
-uv pip install --python skills/market/.venv -r skills/market/requirements.txt
+uv venv market/.venv
+uv pip install --python market/.venv -r market/requirements.txt
 ```
 
 ## 数据生命周期
@@ -45,9 +45,9 @@ uv pip install --python skills/market/.venv -r skills/market/requirements.txt
 | 龙虎榜 | 交易日 16:30 后 | 当日龙虎榜明细与机构统计 |
 
 ```bash
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase noon --date YYYYMMDD
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase close --date YYYYMMDD
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py capture --phase lhb --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py capture --phase noon --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py capture --phase close --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py capture --phase lhb --date YYYYMMDD
 ```
 
 如果 `plan-review/.venv` 尚未建立，可用系统 Python 运行 `workflow.py`；它会通过子进程调用 `market/.venv`。
@@ -68,7 +68,7 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py captu
 自选股未配置时正常忽略；部分标的可用时数据包返回 warning；全部不可用时阻断盘前报告。
 
 ```bash
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
 ```
 
 成功后读取返回的数据包和 [templates/pre_market.md](templates/pre_market.md)，创建 `report/YYYYMMDD_盘前计划.md`。必须检查指数多周期数据、市场宽度与涨跌分布、异动排行、连板梯队和行业分布、1/3/5 日资金排行及自选股 K 线/指标。重点说明隔夜背景、前日结构、最多三条今日假设及其失效条件。
@@ -80,7 +80,7 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepa
 先在午间窗口执行 `capture --phase noon`，再运行：
 
 ```bash
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase noon --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase noon --date YYYYMMDD
 ```
 
 成功后读取数据包、同日盘前报告和 [templates/intraday_review.md](templates/intraday_review.md)，创建 `report/YYYYMMDD_盘中复盘.md`。每条盘前假设只能判为“确认、部分确认、失效、证据不足”之一，并写出下午需验证的收盘数据。
@@ -92,7 +92,7 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepa
 15:05 后执行 `capture --phase close` 保存收盘市场快照；16:30 后执行 `capture --phase lhb` 补充龙虎榜。两者都成功后再运行：
 
 ```bash
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepare --phase post --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase post --date YYYYMMDD
 ```
 
 成功后读取数据包、前两份报告和 [templates/post_market.md](templates/post_market.md)，创建 `report/YYYYMMDD_盘后复盘.md`。
@@ -111,17 +111,17 @@ skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py prepa
 ## 报告验证
 
 ```bash
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py validate --phase pre --date YYYYMMDD
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py validate --phase noon --date YYYYMMDD
-skills/plan-review/.venv/bin/python skills/plan-review/scripts/workflow.py validate --phase post --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py validate --phase pre --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py validate --phase noon --date YYYYMMDD
+plan-review/.venv/bin/python plan-review/scripts/workflow.py validate --phase post --date YYYYMMDD
 ```
 
 验证器检查：数据包状态和日期、必需章节、bundle_id、证据编号、量化陈述的同行引用，以及禁止进入报告的执行层内容。
 
 ## 数据文件
 
-- 原始报告快照：`skills/market/data/report_snapshots/YYYYMMDD/`
-- 阶段数据包：`skills/plan-review/data/YYYYMMDD/`
+- 原始报告快照：`market/data/report_snapshots/YYYYMMDD/`
+- 阶段数据包：`plan-review/data/YYYYMMDD/`
 - 报告：`report/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md`
 - 自选股（可选）：`data/watchlist.json`
 

@@ -1,2 +1,0 @@
-# workflow.py uses Python's standard library only. Market data is collected by
-# skills/market/.venv through a subprocess, keeping AKShare in the market skill.

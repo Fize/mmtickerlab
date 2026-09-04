@@ -36,11 +36,11 @@ from providers.iwencai import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[3]
-DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "report_snapshots"
+SKILL_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = SKILL_DIR / "data" / "report_snapshots"
 RAW_DB = Path(os.environ.get(
     "MMTICKERLAB_RAW_DB",
-    str(Path(__file__).resolve().parents[1] / "data" / "market_raw.db"),
+    str(SKILL_DIR / "data" / "market_raw.db"),
 ))
 SH_TZ = ZoneInfo("Asia/Shanghai")
 NY_TZ = ZoneInfo("America/New_York")
@@ -493,7 +493,7 @@ def write_json(document: dict[str, Any], output: str | None) -> None:
         return
     path = Path(output)
     if not path.is_absolute():
-        path = ROOT / path
+        path = Path.cwd() / path
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(encoded + "\n", encoding="utf-8")
@@ -1911,7 +1911,9 @@ def raw_dataset(
 
 
 def watchlist_dataset(target: date, count: int) -> dict[str, Any]:
-    path = ROOT / "data" / "watchlist.json"
+    path = Path.cwd() / "data" / "watchlist.json"
+    if not path.exists():
+        path = SKILL_DIR / "data" / "watchlist.json"
     if not path.exists():
         payload = {"configured": False, "stocks": {}}
         return envelope("watchlist_data", target, "local watchlist + AKShare.stock_zh_a_hist",

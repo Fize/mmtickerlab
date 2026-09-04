@@ -1,0 +1,2 @@
+# plan-review uses standard library only. It runs data acquisition using
+# market/.venv through a subprocess, keeping AKShare in the market skill.

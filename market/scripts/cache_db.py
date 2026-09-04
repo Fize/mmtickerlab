@@ -7,7 +7,7 @@ import pandas as pd
 import io
 from pathlib import Path
 
-# Resolve database path to skills/market/data/cache.db
+# Resolve database path to market/data/cache.db
 DB_PATH = os.path.join(str(Path(__file__).resolve().parents[1]), "data", "cache.db")
 _initialized = False
 

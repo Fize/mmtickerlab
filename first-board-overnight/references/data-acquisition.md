@@ -9,7 +9,7 @@
 ## 先确认日期
 
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/market_data.py calendar --date YYYYMMDD --count 10
+market/.venv/bin/python market/scripts/market_data.py calendar --date YYYYMMDD --count 10
 ```
 
 目标日期不是交易日时，不执行首板入场研究。
@@ -28,16 +28,16 @@ skills/market/.venv/bin/python skills/market/scripts/market_data.py calendar --d
 对每个候选至少获取：
 
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period daily --count 120 --adjust qfq
-skills/market/.venv/bin/python skills/market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period 30 --count 80 --adjust qfq
-skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 20 --adjust qfq
+market/.venv/bin/python market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period daily --count 120 --adjust qfq
+market/.venv/bin/python market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period 30 --count 80 --adjust qfq
+market/.venv/bin/python market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 20 --adjust qfq
 ```
 
 需要重建指定决策时点时优先使用：
 
 ```bash
-skills/market/.venv/bin/python skills/market/scripts/market_data.py raw --date YYYYMMDD --kind stock-bar --code CODE --period 30 --at YYYYMMDDT143000 --count 80
-skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --date YYYYMMDD --code CODE --period 30 --at YYYYMMDDT143000 --indicator SMA_20,MACD,RSI_6 --count 20
+market/.venv/bin/python market/scripts/market_data.py raw --date YYYYMMDD --kind stock-bar --code CODE --period 30 --at YYYYMMDDT143000 --count 80
+market/.venv/bin/python market/scripts/market_data.py technical --date YYYYMMDD --code CODE --period 30 --at YYYYMMDDT143000 --indicator SMA_20,MACD,RSI_6 --count 20
 ```
 
 根据需要补充 60/120 分钟 K 线、筹码、个股资金和新闻。使用日线判断中期位置、前高与波动；使用分钟线判断当日量价推进；使用技术指标验证而不是替代交易逻辑。
@@ -47,7 +47,7 @@ skills/market/.venv/bin/python skills/market/scripts/market_data.py technical --
 先用命令的 `--output` 将日线和技术指标保存为 JSON，再运行：
 
 ```bash
-python3 skills/first-board-overnight/scripts/render_chart.py \
+python3 first-board-overnight/scripts/render_chart.py \
   --kline PATH_TO_KLINE_JSON \
   --output PATH_TO_SVG \
   --title "CODE YYYYMMDD"
