@@ -14,26 +14,21 @@ description: 量化信号校验与风控门禁 SOP。结合大势乘数校准量
 
 1. **真实数据唯一原则**：风控评估中引用的市场宽度、涨跌停数据、均线及 MACD 指标必须 100% 真实。
 2. **多级真实数据获取路径**：
-   - 第一优先：执行 `market/.venv/bin/python market/scripts/market_data.py` 对应子命令；
+   - 第一优先：调用 **`market`** 技能（参见 [`market/SKILL.md`](../market/SKILL.md)）获取大势与个股技术面确定性数据；
    - 第二优先：若命令报错或暂时不可用，必须使用 `search_web` / `read_url_content` / `tencent-news` / `agent-browser` 检索权威市场数据。
 3. **缺失即阻断（Fail-Fast）**：若通过上述所有途径均无法获取到标的的关键真实技术或行情数据，**风控裁决直接输出 `VETO: BLOCKED`**，告知用户：“由于无法获取 [具体数据]，风控评估已安全阻断，拒绝在数据盲区下单”。**绝对禁止编造假数据放行交易！**
 
 ---
 
-## 真实数据源与核验指令
+## 真实数据核验源（调用 `market` 技能）
 
-在进行风控评估前，通过以下真实命令拉取大势与标的技术数据：
+在进行风控评估前，遵循渐进式披露原则，直接查阅 [`market/SKILL.md`](../market/SKILL.md) 调用对应能力拉取大势与技术数据：
 
-```bash
-# 1. 大势环境与市场宽度（收盘或午间全市场截面）
-market/.venv/bin/python market/scripts/market_data.py snapshot --date YYYYMMDD --session close
-
-# 2. 情绪周期与炸板风险（涨跌停、封单质地与连板高度）
-market/.venv/bin/python market/scripts/market_data.py limits --date YYYYMMDD --session close
-
-# 3. 拟交易标的确定性技术指标（查验均线、MACD、RSI、ATR、布林带）
-market/.venv/bin/python market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 10 --adjust qfq
-```
+| 风控核验场景 | `market` 对应指令与能力 | 校验核心要素 |
+|---|---|---|
+| **大势环境与市场宽度** | `snapshot` 命令 | 上涨/下跌家数分布、涨跌中位数、全市场成交额（用于标定 Regime 与仓位乘数） |
+| **情绪周期与连板梯队** | `limits` 命令 | 涨停家数、跌停家数、炸板率、最高连板梯队（用于排查系统性退潮红线） |
+| **标的技术指标自洽性** | `technical` 命令 | 均线排列（MA5/10/20）、MACD 零轴与金死叉、RSI_6 超买超卖、布林带通道位置 |
 
 ---
 

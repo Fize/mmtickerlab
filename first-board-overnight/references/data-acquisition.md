@@ -2,20 +2,17 @@
 
 ## 原则
 
-把“文件不存在”视为采集动作的起点，而不是阻断结论。先使用 `market raw` 查询本地原始库；若缺失，`market` 会调用能够可靠获取的数据源并持久化。只有命令失败、返回非 `ready`、字段不完整或目标事实不可重建时，才降低证据等级。
+本策略的数据事实采集统一委托至 **`market`** 技能（参见 [`market/SKILL.md`](../../market/SKILL.md)）。把“本地缓存不存在”视为调用 `market` 的起点，而不是阻断结论。先使用 `market` 的 `raw` 子命令查询本地原始库；若缺失，`market` 会调用能够可靠获取的数据源并持久化。只有命令失败、返回非 `ready`、字段不完整或目标事实不可重建时，才降低证据等级。
 
-所有命令从项目根目录运行。任何命令失败后读取错误并停止使用该数据，不把接口失败解释为零记录。
+任何数据命令失败后读取错误并停止使用该数据，不把接口失败解释为零记录。
 
-## 先确认日期
+## 1. 先确认日期（调用 `market calendar`）
 
-```bash
-market/.venv/bin/python market/scripts/market_data.py calendar --date YYYYMMDD --count 10
-```
+调用 `market` 技能的 `calendar` 命令（`calendar --date YYYYMMDD --count 10`）验证交易日状态。目标日期不是交易日时，不执行首板入场研究。
 
-目标日期不是交易日时，不执行首板入场研究。
+## 2. 获取市场与首板环境（调用 `market snapshot/limits/flows`）
 
-## 获取市场与首板环境
-
+遵循时效窗口调用 `market` 技能提取环境截面（具体参数参见 [`market/SKILL.md`](../../market/SKILL.md)）：
 - 当日午间窗口：采集 `snapshot/limits/flows --session noon`。
 - 当日 15:05 后：采集 `snapshot/limits/flows --session close`。
 - 最近 30 个自然日：按日获取 `limits`，构建首板数量、炸板率、连板梯队和行业分布。
@@ -23,22 +20,12 @@ market/.venv/bin/python market/scripts/market_data.py calendar --date YYYYMMDD -
 
 不要因为本地没有历史快照而跳过采集。`limits` 支持最近 30 个自然日；超过提供方可靠窗口后，才标记该部分不可恢复。
 
-## 获取候选量价状态
+## 3. 获取候选量价状态（调用 `market kline/technical/raw`）
 
-对每个候选至少获取：
-
-```bash
-market/.venv/bin/python market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period daily --count 120 --adjust qfq
-market/.venv/bin/python market/scripts/market_data.py kline --date YYYYMMDD --code CODE --period 30 --count 80 --adjust qfq
-market/.venv/bin/python market/scripts/market_data.py technical --date YYYYMMDD --code CODE --count 20 --adjust qfq
-```
-
-需要重建指定决策时点时优先使用：
-
-```bash
-market/.venv/bin/python market/scripts/market_data.py raw --date YYYYMMDD --kind stock-bar --code CODE --period 30 --at YYYYMMDDT143000 --count 80
-market/.venv/bin/python market/scripts/market_data.py technical --date YYYYMMDD --code CODE --period 30 --at YYYYMMDDT143000 --indicator SMA_20,MACD,RSI_6 --count 20
-```
+调用 `market` 技能提取候选标的的确定性量价与技术指标：
+- **中长期趋势与日内推进**：调用 `kline` 获取日线（`--period daily --count 120`）与 30 分钟 K 线（`--period 30 --count 80`）；
+- **趋势与动量技术指标**：调用 `technical` 获取均线、MACD、RSI 等确定性指标（`--count 20`）；
+- **历史决策时点回溯**：需重建特定时点盘口时，调用 `raw`（指定 `--at YYYYMMDDT143000`）与 `technical`（指定 `--at` 及 `--indicator`）。
 
 根据需要补充 60/120 分钟 K 线、筹码、个股资金和新闻。使用日线判断中期位置、前高与波动；使用分钟线判断当日量价推进；使用技术指标验证而不是替代交易逻辑。
 
