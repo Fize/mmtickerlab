@@ -113,7 +113,8 @@ config.yaml
 pyrightconfig.json
 
 # Development directories
-.github/
+.github/*
+!.github/workflows/
 .specify/
 
 # Universal patterns

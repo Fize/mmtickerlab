@@ -124,3 +124,9 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase pre
 - `sim-trade/data/simulation.db`：模拟交易账户、委托挂单、成交记录与可审计审计流水。
 - `plan-review/data/YYYYMMDD/`：盘前、盘中与盘后快照证据包。
 - `report/`：生成的各阶段投研计划、复盘报告与行业深度研报。
+
+---
+
+## 开源协议 (License)
+
+本项目遵循 [MIT License](LICENSE) 开源协议。
