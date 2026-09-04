@@ -1,7 +1,7 @@
 ---
 name: ticker-pipeline
 version: 1.0.0
-description: 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。各专员 Prompt 独立存放于 prompts/ 目录下，数据缺失时严格终止阻断，绝不编造数据。
+description: 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。各专员 Prompt 独立存放于 agents/ 目录下，践行渐进式披露直接调用 market 技能获取底层数据，数据缺失时严格终止阻断。
 ---
 
 # Ticker Pipeline — 多 Agent 并行投研与风控决策流水线
@@ -14,8 +14,8 @@ description: 多 Agent 并行投研与风控决策流水线。输入标的代码
 
 1. **真实数据绝对唯一性**：
    - 流水线中引用的所有基本面财务数据（最新 EPS、归母净利润、营收增速、净资产）、行情与技术指标（最新价、涨跌幅、均线、MACD、RSI、布林带）、筹码数据（获利盘比例、平均成本、集中度）、机构资金流（1/3/5日净流入、主力净买额、龙虎榜席位）以及宏观/外盘资讯，**必须 100% 为确定性真实数据**。
-2. **多级权威数据获取路径**：
-   - **第一优先**：调用本仓库 `market/.venv/bin/python market/scripts/market_data.py` 对应子命令获取确定性数据；
+2. **渐进式披露与多级数据获取路径**：
+   - **第一优先**：各专员遵照渐进式披露原则，查阅并调用本仓库 **`market`** 技能（具体命令与参数规范直接参见 [`market/SKILL.md`](../market/SKILL.md)）获取确定性数据；
    - **第二优先**：若命令遇到网络波动、港美股特定财报字段未包含或问财受限，必须通过 `search_web` / `read_url_content` / `tencent-news` / `agent-browser` 检索官方公告、交易所数据（上交所/深交所/港交所/SEC）或权威财经媒体（新华财经、彭博、路透、东方财富）。
 3. **缺失即阻断（Fail-Fast）**：
    - 若通过上述所有途径均无法获取到标的的核心真实财务（EPS/净利润）或行情数据，**流水线必须立即无条件安全终止**；
@@ -23,16 +23,16 @@ description: 多 Agent 并行投研与风控决策流水线。输入标的代码
 
 ---
 
-## Subagent 独立 Prompt 索引
+## Subagent 架构与规范索引 (Agents Index)
 
-各专业 Subagent 的完整 Prompt 已按职能拆分并保存于 `prompts/` 目录下，便于单独查看、审查与维护：
+流水线将各专业 Subagent 的系统 Prompt 与专项分析规范独立存放于 `agents/` 目录下，便于查看、审查与独立演进：
 
-| 专员代号 (Role) | 职能定位 | 专属 Prompt 独立文件 |
-|---|---|---|
-| **`fundamental-valuation-agent`** | 真实财务 EPS、5 种多模型估值、技术面四维体检 | [`prompts/fundamental_valuation.md`](prompts/fundamental_valuation.md) |
-| **`market-heat-agent`** | 筹码分布、获利盘比重、主力资金流向、龙虎榜席位 | [`prompts/market_heat.md`](prompts/market_heat.md) |
-| **`intel-news-agent`** | 宏观政策、行业赛道、个股重大事件公告四维打标 | [`prompts/intel_news.md`](prompts/intel_news.md) |
-| **`risk-guard-agent`** | 逻辑自洽交叉核验、大势乘数、4 大红线与一票否决 | [`prompts/risk_guard.md`](prompts/risk_guard.md) |
+| 专员代号 (Role) | 职能定位 | 数据源依赖 | 专属 Agent 规范文件 |
+|---|---|:---:|---|
+| **`fundamental-valuation-agent`** | 真实财务 EPS、5 种多模型估值、技术面四维体检 | `market` 技能 (`quote`/`financials`/`technical`) | [`agents/fundamental_valuation.md`](agents/fundamental_valuation.md) |
+| **`market-heat-agent`** | 筹码分布、获利盘比重、主力资金流向、龙虎榜席位 | `market` 技能 (`chips`/`stock-flow`/`lhb`) | [`agents/market_heat.md`](agents/market_heat.md) |
+| **`intel-news-agent`** | 宏观政策、行业赛道、个股重大事件公告四维打标 | `market` 技能 (`news`/`flows`/`overnight`) + 搜索 | [`agents/intel_news.md`](agents/intel_news.md) |
+| **`risk-guard-agent`** | 逻辑自洽交叉核验、大势乘数、4 大红线与一票否决 | `market` 技能 (`snapshot`/`limits`/`technical`) | [`agents/risk_guard.md`](agents/risk_guard.md) |
 
 ---
 
@@ -44,9 +44,9 @@ flowchart TD
     
     subgraph Phase1["第一阶段: 多 Agent 并发深度调研 (invoke_subagent)"]
         direction LR
-        AgentA["Subagent A: fundamental-valuation-agent<br/>(参见 prompts/fundamental_valuation.md)"]
-        AgentB["Subagent B: market-heat-agent<br/>(参见 prompts/market_heat.md)"]
-        AgentC["Subagent C: intel-news-agent<br/>(参见 prompts/intel_news.md)"]
+        AgentA["Subagent A: fundamental-valuation-agent<br/>(参见 agents/fundamental_valuation.md)"]
+        AgentB["Subagent B: market-heat-agent<br/>(参见 agents/market_heat.md)"]
+        AgentC["Subagent C: intel-news-agent<br/>(参见 agents/intel_news.md)"]
     end
     
     Gate -->|通过| Phase1
@@ -59,7 +59,7 @@ flowchart TD
     Phase1 --> Synth
     
     subgraph Phase3["第三阶段: 独立量化风控门禁 (invoke_subagent)"]
-        AgentD["Subagent D: risk-guard-agent<br/>(参见 prompts/risk_guard.md)"]
+        AgentD["Subagent D: risk-guard-agent<br/>(参见 agents/risk_guard.md)"]
     end
     
     Synth --> Phase3
@@ -67,13 +67,15 @@ flowchart TD
     Phase3 --> VetoCheck{"VETO 裁决"}
     VetoCheck -->|VETO: PASSED| FinalReport["交付: 《标的全维度投研与风控决策总报》"]
     VetoCheck -->|VETO: BLOCKED| VetoReport["交付: 《风控阻断安全警示》<br/>(驳回买入评级，强制观望/减仓)"]
+
+    market[("market 技能<br/>(底层确定性数据底座)")] -.->|渐进式披露调用| AgentA & AgentB & AgentC & AgentD
 ```
 
 ---
 
 ## 阶段一：多 Agent 并行深度调研
 
-主调度器必须使用单次 `invoke_subagent` 调用，同时启动 3 个专属 Subagent 进行并发分析，避免串行等待。
+主调度器必须使用单次 `invoke_subagent` 调用，同时启动 3 个专属 Subagent 进行并发分析，避免串行等待。各专员根据需求查阅并调用 `market` 技能获取数据。
 
 ### 并发调度指令规范
 
@@ -83,17 +85,17 @@ invoke_subagent(
         {
             "TypeName": "self",
             "Role": "fundamental-valuation-agent",
-            "Prompt": "<加载 prompts/fundamental_valuation.md 并替换 {CODE} 和 {DATE}>"
+            "Prompt": "<加载 agents/fundamental_valuation.md 并替换 {CODE} 和 {DATE}>"
         },
         {
             "TypeName": "self",
             "Role": "market-heat-agent",
-            "Prompt": "<加载 prompts/market_heat.md 并替换 {CODE} 和 {DATE}>"
+            "Prompt": "<加载 agents/market_heat.md 并替换 {CODE} 和 {DATE}>"
         },
         {
             "TypeName": "self",
             "Role": "intel-news-agent",
-            "Prompt": "<加载 prompts/intel_news.md 并替换 {CODE} 和 {DATE}>"
+            "Prompt": "<加载 agents/intel_news.md 并替换 {CODE} 和 {DATE}>"
         }
     ]
 )
@@ -103,45 +105,28 @@ invoke_subagent(
 
 ### Subagent A: 基本面与多模型估值专员 (`fundamental-valuation-agent`)
 
-- **独立 Prompt 文件**：[`prompts/fundamental_valuation.md`](prompts/fundamental_valuation.md)
+- **独立规范文档**：[`agents/fundamental_valuation.md`](agents/fundamental_valuation.md)
 - **职责定位**：透视标的真实资产质地、盈利质量与成长性。核算真实 EPS，根据公司商业模式从 5 种估值模型（PE / PEG / PB-ROE / PS / 自由现金流折现 DCF）中选取 2~3 种最适用模型，测算【悲观 / 基准 / 乐观】三档目标市值与对应目标价，并结合 20+ 项量化技术指标进行技术面体检。
-- **确定性执行指令**：
-  ```bash
-  market/.venv/bin/python market/scripts/market_data.py quote --date {DATE} --code {CODE}
-  market/.venv/bin/python market/scripts/market_data.py financials --date {DATE} --code {CODE} --statement income --count 4
-  market/.venv/bin/python market/scripts/market_data.py financials --date {DATE} --code {CODE} --statement balance_sheet --count 4
-  market/.venv/bin/python market/scripts/market_data.py financials --date {DATE} --code {CODE} --statement cashflow --count 4
-  market/.venv/bin/python market/scripts/market_data.py technical --date {DATE} --code {CODE} --count 10 --adjust qfq
-  ```
-- **输出规格**：符合 `prompts/fundamental_valuation.md` 中规范的标准化 JSON 事实块。
+- **底层数据支持**：查阅并调用 **`market`** 技能的 `quote`、`financials`（利润表/负债表/现金流量表）与 `technical` 命令（参见 [`market/SKILL.md`](../market/SKILL.md)）。
+- **输出规格**：符合 `agents/fundamental_valuation.md` 中规范的标准化 JSON 事实块。
 
 ---
 
 ### Subagent B: 市场热度与机构参与度专员 (`market-heat-agent`)
 
-- **独立 Prompt 文件**：[`prompts/market_heat.md`](prompts/market_heat.md)
+- **独立规范文档**：[`agents/market_heat.md`](agents/market_heat.md)
 - **职责定位**：深度透视筹码成本结构、主力资金进出与机构博弈深度。评估当前获利盘比重、筹码单峰/多峰密集度、主力资金 1/3/5 日持续性净买卖力度，以及龙虎榜（LHB）游资与机构席位动向。
-- **确定性执行指令**：
-  ```bash
-  market/.venv/bin/python market/scripts/market_data.py chips --date {DATE} --code {CODE} --count 10
-  market/.venv/bin/python market/scripts/market_data.py stock-flow --date {DATE} --code {CODE} --flow-period 5
-  market/.venv/bin/python market/scripts/market_data.py lhb --date {DATE} --code {CODE}
-  ```
-- **输出规格**：符合 `prompts/market_heat.md` 中规范的标准化 JSON 事实块。
+- **底层数据支持**：查阅并调用 **`market`** 技能的 `chips`、`stock-flow` 与 `lhb` 命令（参见 [`market/SKILL.md`](../market/SKILL.md)）。
+- **输出规格**：符合 `agents/market_heat.md` 中规范的标准化 JSON 事实块。
 
 ---
 
 ### Subagent C: 消息舆情与市场情报专员 (`intel-news-agent`)
 
-- **独立 Prompt 文件**：[`prompts/intel_news.md`](prompts/intel_news.md)
+- **独立规范文档**：[`agents/intel_news.md`](agents/intel_news.md)
 - **职责定位**：全天候扫描宏观政策风向、所处行业板块催化、标的公司自身公告（重组、增减持、业绩预告、合同中标、诉讼立案）、全网权威舆情及隔夜外盘联动。客观陈述事实，执行四维属性打标。
-- **确定性执行指令**：
-  ```bash
-  market/.venv/bin/python market/scripts/market_data.py news --date {DATE} --code {CODE} --count 10
-  market/.venv/bin/python market/scripts/market_data.py flows --date {DATE} --session close
-  market/.venv/bin/python market/scripts/market_data.py overnight --date {DATE}
-  ```
-- **输出规格**：符合 `prompts/intel_news.md` 中规范的标准化 JSON 事实块。
+- **底层数据支持**：查阅并调用 **`market`** 技能的 `news`、`flows` 与 `overnight` 命令（参见 [`market/SKILL.md`](../market/SKILL.md)），按需结合外部检索工具。
+- **输出规格**：符合 `agents/intel_news.md` 中规范的标准化 JSON 事实块。
 
 ---
 
@@ -170,14 +155,9 @@ invoke_subagent(
 
 ### Subagent D: 量化风控与一票否决专员 (`risk-guard-agent`)
 
-- **独立 Prompt 文件**：[`prompts/risk_guard.md`](prompts/risk_guard.md)
+- **独立规范文档**：[`agents/risk_guard.md`](agents/risk_guard.md)
 - **职责定位**：作为买入前的独立安全门禁。负责大势环境（Regime）标定、信号自洽性交叉核验、仓位上限计算、动态止损位锁定，以及排查 4 大一票否决红线。
-- **确定性执行指令**：
-  ```bash
-  market/.venv/bin/python market/scripts/market_data.py snapshot --date {DATE} --session close
-  market/.venv/bin/python market/scripts/market_data.py limits --date {DATE} --session close
-  market/.venv/bin/python market/scripts/market_data.py technical --date {DATE} --code {CODE} --count 10 --adjust qfq
-  ```
+- **底层数据支持**：查阅并调用 **`market`** 技能的 `snapshot`、`limits` 与 `technical` 命令（参见 [`market/SKILL.md`](../market/SKILL.md)）。
 - **调度调用方式**：
   ```python
   invoke_subagent(
@@ -185,12 +165,12 @@ invoke_subagent(
           {
               "TypeName": "self",
               "Role": "risk-guard-agent",
-              "Prompt": "<加载 prompts/risk_guard.md 并填入 {CODE}、{DATE}、{PROPOSED_RATING}、{TARGET_PRICE} 与 {SUMMARY}>"
+              "Prompt": "<加载 agents/risk_guard.md 并填入 {CODE}、{DATE}、{PROPOSED_RATING}、{TARGET_PRICE} 与 {SUMMARY}>"
           }
       ]
   )
   ```
-- **输出规格**：符合 `prompts/risk_guard.md` 中规范的标准化 JSON 风控审查报告。
+- **输出规格**：符合 `agents/risk_guard.md` 中规范的标准化 JSON 风控审查报告。
 
 ---
 
@@ -310,7 +290,7 @@ invoke_subagent(
 
 ## 阻断原因说明
 流水线在第一阶段数据采集过程中，尝试通过以下全部权威渠道均无法获取到标的的核心真实数据：
-1. 本地数据引擎：`market_data.py financials` / `quote` 命令未返回有效财报或行情数值；
+1. 本地数据引擎：调用 `market` 技能相关数据命令未返回有效财报或行情数值；
 2. 权威网络检索：官方交易所公告与主流财经终端未检索到经过审计的最新关键 EPS/营收数据。
 
 ---

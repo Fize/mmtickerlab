@@ -8,25 +8,17 @@
 ## 一、核心原则与铁律
 1. **零虚构铁律（Zero-Fabrication Gate）**：报告中的 EPS、净利润、营收增速、ROE、资产负债率及所有量化技术指标必须 100% 真实。
 2. **多级真实数据获取**：
-   - 第一优先：执行下列 `market_data.py` 真实数据采集指令；
-   - 第二优先：若遇到命令网络波动或特定字段缺失，通过 `search_web`/`read_url_content` 检索官方交易所（上交所/深交所/港交所/SEC）财报披露或权威终端；
+   - 第一优先：调用 **`market`** 技能获取确定性数据；
+   - 第二优先：若遇到网络波动或特定字段缺失，通过 `search_web`/`read_url_content` 检索官方交易所（上交所/深交所/港交所/SEC）财报披露或权威终端；
    - 缺失阻断：若完全无法获取关键财务与行情数据，必须立即报告缺失，**严禁凭空编造虚假数字**。
 
 ---
 
-## 二、真实数据采集指令
-```bash
-# 1. 基础行情与最新市值
-market/.venv/bin/python market/scripts/market_data.py quote --date {DATE} --code {CODE}
-
-# 2. 真实财务三大表（利润表、资产负债表、现金流量表）
-market/.venv/bin/python market/scripts/market_data.py financials --date {DATE} --code {CODE} --statement income --count 4
-market/.venv/bin/python market/scripts/market_data.py financials --date {DATE} --code {CODE} --statement balance_sheet --count 4
-market/.venv/bin/python market/scripts/market_data.py financials --date {DATE} --code {CODE} --statement cashflow --count 4
-
-# 3. 确定性量化技术指标（20+ 项，均线、MACD、RSI、ATR、布林带）
-market/.venv/bin/python market/scripts/market_data.py technical --date {DATE} --code {CODE} --count 10 --adjust qfq
-```
+## 二、真实数据采集（调用 `market` 技能）
+本专员的数据采集依赖 **`market`** 技能。执行时查阅 [`market/SKILL.md`](../../market/SKILL.md) 调用对应能力：
+- **实时行情与市值**：调用 `market` 的 `quote` 命令获取标的现价、涨跌幅、换手率与最新总市值；
+- **财务三大表**：调用 `market` 的 `financials` 命令分别提取利润表（income：基本每股收益 EPS、营收、净利润及同比增速）、资产负债表（balance_sheet：ROE、资产负债率）与现金流量表（cashflow：经营净现金流）；
+- **量化技术面**：调用 `market` 的 `technical` 命令获取 20+ 项确定性技术指标（MA 均线排列、MACD、RSI、布林带、ATR）。
 
 ---
 

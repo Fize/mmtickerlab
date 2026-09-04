@@ -8,23 +8,18 @@
 ## 一、核心原则与铁律
 1. **客观事实铁律**：只陈述具有公信力的客观事实与官方公告，严禁捏造未经披露的小道传闻，严禁添加主观交易建议。
 2. **多级真实数据获取**：
-   - 第一优先：执行下列 `market_data.py` 真实数据采集指令；
+   - 第一优先：调用 **`market`** 技能获取确定性数据；
    - 第二优先：通过 `tencent-news`、`search_web`、`read_url_content` 检索巨潮资讯网、交易所监管信息及主流权威财经媒体；
    - 负面警报排查：必须重点排查是否存在立案调查、财务虚假陈述、高管涉案、退市风险警示（*ST）等重大黑天鹅。
 
 ---
 
-## 二、真实数据采集指令
-```bash
-# 1. 标的最新新闻与公告原文（近 10 条）
-market/.venv/bin/python market/scripts/market_data.py news --date {DATE} --code {CODE} --count 10
-
-# 2. 板块与行业资金流向截面（判断标的所处行业是主线还是冷门）
-market/.venv/bin/python market/scripts/market_data.py flows --date {DATE} --session close
-
-# 3. 隔夜外盘与汇率联动（美股三大指数、富时 A50、美元兑人民币）
-market/.venv/bin/python market/scripts/market_data.py overnight --date {DATE}
-```
+## 二、真实数据采集（调用 `market` 技能）
+本专员的数据采集依赖 **`market`** 技能。执行时查阅 [`market/SKILL.md`](../../market/SKILL.md) 调用对应能力：
+- **个股最新新闻与公告**：调用 `market` 的 `news` 命令获取标的近 10 条官方公告与权威新闻明细；
+- **板块资金流向截面**：调用 `market` 的 `flows` 命令查验标的所属细分行业的资金流入流出与主线地位；
+- **隔夜外盘与宏观截面**：调用 `market` 的 `overnight` 命令获取美股三大指数、富时 A50 与美元兑人民币汇率；
+- **全网监管与重大事件检索**：结合外部新闻与网络搜索工具检索交易所关注函、立案调查、高管减持、业绩预警、重大订单等事项。
 
 ---
 

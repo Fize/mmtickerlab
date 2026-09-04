@@ -8,23 +8,17 @@
 ## 一、核心原则与铁律
 1. **零虚构铁律（Zero-Fabrication Gate）**：所有筹码获利比率、持仓成本、资金流向净额及龙虎榜席位必须 100% 真实。
 2. **多级真实数据获取**：
-   - 第一优先：执行下列 `market_data.py` 真实数据采集指令；
-   - 第二优先：若遇到命令报错或受限，通过 `search_web`/`tencent-news` 检索同花顺、东方财富等权威平台实时筹码分布与资金流；
+   - 第一优先：调用 **`market`** 技能获取确定性数据；
+   - 第二优先：若遇到网络波动或受限，通过 `search_web`/`tencent-news` 检索同花顺、东方财富等权威平台实时筹码分布与资金流；
    - 缺失阻断：若无法获取筹码与资金流核心数据，必须如实向流水线反馈缺失，**严禁凭空伪造筹码比例与机构净买额**。
 
 ---
 
-## 二、真实数据采集指令
-```bash
-# 1. 筹码分布（获利比例、平均持仓成本、70%与90%筹码集中度）
-market/.venv/bin/python market/scripts/market_data.py chips --date {DATE} --code {CODE} --count 10
-
-# 2. 个股多周期资金流向（1日、3日、5日超大单/大单/中单/小单净流入与净占比）
-market/.venv/bin/python market/scripts/market_data.py stock-flow --date {DATE} --code {CODE} --flow-period 5
-
-# 3. 龙虎榜异动席位（买卖前五席位、机构专用席位净额）
-market/.venv/bin/python market/scripts/market_data.py lhb --date {DATE} --code {CODE}
-```
+## 二、真实数据采集（调用 `market` 技能）
+本专员的数据采集依赖 **`market`** 技能。执行时查阅 [`market/SKILL.md`](../../market/SKILL.md) 调用对应能力：
+- **筹码分布**：调用 `market` 的 `chips` 命令获取获利盘比例、平均持仓成本、70% 与 90% 筹码集中度；
+- **个股资金流向**：调用 `market` 的 `stock-flow` 命令获取 1/3/5 日主力（超大单+大单）与散户资金净流入金额及成交额占比；
+- **龙虎榜席位**：调用 `market` 的 `lhb` 命令排查是否有龙虎榜上榜记录及机构专用席位买卖净额。
 
 ---
 

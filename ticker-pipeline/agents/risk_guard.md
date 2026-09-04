@@ -17,17 +17,11 @@
 
 ---
 
-## 二、真实数据采集指令
-```bash
-# 1. 全市场大势截面与宽度（上涨家数、跌停家数、全市场中位数）
-market/.venv/bin/python market/scripts/market_data.py snapshot --date {DATE} --session close
-
-# 2. 涨跌停与连板情绪高度（炸板率、连板梯队高度）
-market/.venv/bin/python market/scripts/market_data.py limits --date {DATE} --session close
-
-# 3. 拟交易标的确定性技术指标（查验均线空头排列、超买背离）
-market/.venv/bin/python market/scripts/market_data.py technical --date {DATE} --code {CODE} --count 10 --adjust qfq
-```
+## 二、真实数据采集（调用 `market` 技能）
+本专员的数据采集依赖 **`market`** 技能。执行时查阅 [`market/SKILL.md`](../../market/SKILL.md) 调用对应能力：
+- **全市场大势截面**：调用 `market` 的 `snapshot` 命令获取全市场涨跌中位数、上涨家数比重与市场广度；
+- **涨跌停与连板情绪**：调用 `market` 的 `limits` 命令获取涨跌停家数、炸板率与连板高度梯队；
+- **标的确定性技术指标**：调用 `market` 的 `technical` 命令获取拟交易标的均线系统（MA5/10/20）、MACD 零轴与红绿柱、RSI_6 与 ATR。
 
 ---
 
