@@ -10,7 +10,7 @@
 
 | 层次 | 技能名称 (Slug) | 版本 | 核心功能与职能 | 核心文档 |
 |:---|:---|:---:|:---|:---|
-| **并行流水线** | **`pipeline`** | `1.0.0` | 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。数据缺失时严格终止阻断。 | [`pipeline/SKILL.md`](pipeline/SKILL.md) |
+| **并行流水线** | **`ticker-pipeline`** | `1.0.0` | 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。各专员 Prompt 独立存放于 `prompts/`，数据缺失时严格终止阻断。 | [`ticker-pipeline/SKILL.md`](ticker-pipeline/SKILL.md) |
 | **底层数据** | **`market`** | `1.0.0` | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜与财务数据。优先使用问财，AKShare 仅作 A 股兜底。 | [`market/SKILL.md`](market/SKILL.md) |
 | **步骤 1：事实** | **`market-intel`** | `1.0.0` | 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、板块资金流向及盘中大单，输出客观《市场情报快报》。只报事实，不给建议。 | [`market-intel/SKILL.md`](market-intel/SKILL.md) |
 | **步骤 2：研报** | **`asset-analysis`** | `1.0.0` | 标的量化投研 SOP（支持 A/港/美）。提取基本面真实 EPS，提供 PE/PEG/PB-ROE/PS/DCF 多模型目标市值测算及四维技术量化解析。 | [`asset-analysis/SKILL.md`](asset-analysis/SKILL.md) |
@@ -24,11 +24,11 @@
 
 ## 投研与交易工作流（Pipeline）
 
-各技能之间既可独立按需触发，亦可通过 `pipeline` 组成多 Agent 并行的端到端决策流水线：
+各技能之间既可独立按需触发，亦可通过 `ticker-pipeline` 组成多 Agent 并行的端到端决策流水线：
 
 ```mermaid
 flowchart TD
-    subgraph 并行投研流水线 ["pipeline (多 Agent 并行投研流水线)"]
+    subgraph 并行投研流水线 ["ticker-pipeline (多 Agent 并行投研流水线)"]
         direction TB
         subgraph Phase1 ["第一阶段：并发深度调研"]
             P1A["fundamental-valuation-agent<br/>(真实EPS/多模型市值/技术面)"]
