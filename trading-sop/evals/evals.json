@@ -1,0 +1,23 @@
+{
+  "skill_name": "trading-sop",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "今天A股开盘前帮我做个盘前准备，看看今天市场怎么样，我应该怎么操作",
+      "expected_output": "触发 SOP-A 盘前链，正确顺序调用 market-intel → plan-review → risk-guard，输出大势Regime判断、今日关键观察指标和仓位建议，不虚构任何数据",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我深度研究一下贵州茅台（600519），我想知道现在值不值得买入，给我一套完整的分析",
+      "expected_output": "触发 SOP-B 个股深度研究链，确认标的代码后并行启动3个subagent（fundamental_valuation/market_heat/intel_news），再调用industry-research和asset-analysis，最后通过risk-guard VETO门控，输出评级和止损线",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "今晚要不要留首板？帮我分析一下今天的赚钱效应和候选票",
+      "expected_output": "触发 SOP-C 首板隔夜链，检查盘后快照是否存在，依次调用 plan-review盘后段 → market-intel → first-board-overnight → risk-guard，输出 BUY/WATCH/NO_TRADE 决策",
+      "files": []
+    }
+  ]
+}

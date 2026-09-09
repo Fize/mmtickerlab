@@ -138,3 +138,6 @@ specs
 # Runtime data directories (cache, watchlist, simulation state)
 /data/
 */data/
+
+# Eval workspaces (skill testing)
+*-workspace/
