@@ -148,17 +148,22 @@ description: A股交易标准操作程序（SOP）总编排。从用户的自然
 
 ---
 
-## 报告归档目录规范
+## 报告归档目录规范（工作空间感知）
 
-每条 SOP 链与各子技能生成的分析报告必须统一归档至根目录 `report/` 对应子目录中（均需附带标准 YAML Frontmatter 元数据）：
+为支持作为全局技能安装（如位于 `~/.gemini/config/skills/` 或 `~/.claude/skills/`）以及在任意用户工程目录下执行，**所有报告必须输出至用户当前工作空间（Current Workspace / CWD）下的 `report/` 目录中**，严禁将报告写在技能代码的安装目录内：
 
-| 报告类型 | 归档路径模式 | 责任技能 | 模板参考 |
+- **路径解析规则**：优先使用环境变量 `MMTICKERLAB_REPORT_DIR`；若未配置，则自动落地在当前对话工作区的 `./report/` 目录（若不存在由技能自动创建）；
+- **各子技能归档规范**：
+
+| 报告类型 | 工作空间归档路径模式 | 责任技能 | 模板参考 |
 |---|---|---|---|
-| **SOP 执行摘要** | `report/sop/YYYYMMDD_SOP_{链路名称}_{标的代码}.md` | `trading-sop` | [`templates/sop_summary.md`](templates/sop_summary.md) |
-| **日内三段式复盘** | `report/daily/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md` | `plan-review` | `plan-review/templates/` |
-| **个股投研决策总报** | `report/ticker/YYYYMMDD_{CODE}_{标的名称}_投研决策总报.md` | `ticker-pipeline` | `ticker-pipeline/templates/ticker_report.md` |
-| **首板隔夜决策** | `report/strategy/YYYYMMDD_首板隔夜决策.md` | `first-board-overnight` | `first-board-overnight/templates/strategy_report.md` |
-| **行业深度研报** | `report/industry/YYYYMMDD_{行业名称}_行业深度研报.md` | `industry-research` | `industry-research/` |
+| **SOP 执行摘要** | `./report/sop/YYYYMMDD_SOP_{链路名称}_{标的代码}.md` | `trading-sop` | [`templates/sop_summary.md`](templates/sop_summary.md) |
+| **日内三段式复盘** | `./report/daily/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md` | `plan-review` | `plan-review/templates/` |
+| **个股投研决策总报** | `./report/ticker/YYYYMMDD_{CODE}_{标的名称}_投研决策总报.md` | `ticker-pipeline` | `ticker-pipeline/templates/ticker_report.md` |
+| **首板隔夜决策** | `./report/strategy/YYYYMMDD_首板隔夜决策.md` | `first-board-overnight` | `first-board-overnight/templates/strategy_report.md` |
+| **行业深度研报** | `./report/industry/YYYYMMDD_{行业名称}_行业深度研报.md` | `industry-research` | `industry-research/` |
+
+> 兼容性提示：历史直接存放在 `./report/` 根目录下的报告文件也会被 Web 看板自动递归索引与解析。
 
 ---
 
@@ -189,4 +194,4 @@ python3 trading-sop/scripts/server.py --port 8088
 3. **透明进度**：每个技能执行完毕后向用户报告一次中间状态，不要一次性沉默执行所有步骤。
 4. **阻断即停止**：任何技能返回数据缺失阻断信号，立即终止链路，输出《数据盲区安全阻断通知》，不继续后续步骤。
 5. **用户控制权**：在启动耗时较长的并行阶段（SOP-B Phase 1）前，先向用户确认目标标的和分析范围是否正确。
-6. **报告必落盘**：生成的总结报告必须同时写入对应 `report/` 子目录并附带 YAML Frontmatter，以便 Web 看板实时索引。
+6. **报告必落盘**：生成的总结报告必须写入用户工作空间（CWD）的 `./report/` 对应子目录并附带 YAML Frontmatter，以便 Web 看板实时索引，切勿写入技能安装目录。

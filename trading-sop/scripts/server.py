@@ -12,15 +12,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from market_reader import calculate_indicators, get_kline_bars, render_svg_chart
-from report_indexer import get_report_detail, scan_reports
+from report_indexer import find_report_dir, get_report_detail, scan_reports
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_REPORT_DIR = REPO_ROOT / "report"
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    report_dir: Path = DEFAULT_REPORT_DIR
+    report_dir: Path = find_report_dir()
 
     def log_message(self, format: str, *args: object) -> None:
         # Standard silent or compact logging
@@ -134,7 +132,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def run_server(port: int = 8088, host: str = "127.0.0.1", report_dir: Path | str | None = None) -> None:
-    r_dir = Path(report_dir).resolve() if report_dir else DEFAULT_REPORT_DIR
+    r_dir = find_report_dir(report_dir)
     r_dir.mkdir(parents=True, exist_ok=True)
     DashboardHandler.report_dir = r_dir
 

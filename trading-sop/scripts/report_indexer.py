@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,54 @@ CATEGORY_LABELS = {
     "sop": "SOP摘要",
     "general": "通用报告",
 }
+
+
+def find_report_dir(explicit_dir: Path | str | None = None) -> Path:
+    """Resolve report output directory across user workspace, environment variables, and fallback."""
+    # 1. Explicit argument
+    if explicit_dir:
+        p = Path(explicit_dir).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    # 2. Environment variable overrides
+    if "MMTICKERLAB_REPORT_DIR" in os.environ:
+        p = Path(os.environ["MMTICKERLAB_REPORT_DIR"]).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    if "REPORT_DIR" in os.environ:
+        p = Path(os.environ["REPORT_DIR"]).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    # 3. Check current working directory (User Workspace)
+    cwd = Path.cwd().resolve()
+    if (cwd / "report").exists():
+        return cwd / "report"
+
+    # 4. Walk up from CWD to find git root or existing report directory
+    curr = cwd
+    for _ in range(5):
+        if (curr / "report").exists():
+            return curr / "report"
+        if (curr / ".git").exists():
+            target = curr / "report"
+            target.mkdir(parents=True, exist_ok=True)
+            return target
+        if curr == curr.parent:
+            break
+        curr = curr.parent
+
+    # 5. Sibling directory of skill (dev repo root: e.g. mmtickerlab/report)
+    skill_dir = Path(__file__).resolve().parents[1]
+    sibling_repo = skill_dir.parent / "report"
+    if sibling_repo.exists():
+        return sibling_repo
+
+    # 6. Default to current working directory's report/
+    default_target = cwd / "report"
+    default_target.mkdir(parents=True, exist_ok=True)
+    return default_target
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:

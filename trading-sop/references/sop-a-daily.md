@@ -59,7 +59,7 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase pre
 
 ### 执行条件
 
-必须存在同日盘前计划报告（`report/YYYYMMDD_盘前计划.md`）。
+必须存在同日盘前计划报告（`./report/daily/YYYYMMDD_盘前计划.md` 或 `./report/YYYYMMDD_盘前计划.md`）。
 
 ### Step 1：午间快照采集
 

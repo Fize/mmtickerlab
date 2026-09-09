@@ -10,9 +10,44 @@ from pathlib import Path
 from typing import Any
 
 
+import os
+
+
 def get_default_db_path() -> Path:
-    repo_root = Path(__file__).resolve().parents[2]
-    return repo_root / "market" / "data" / "market_raw.db"
+    """Resolve market_raw.db across user workspace, installed skills, and dev repo."""
+    # 1. Environment variable overrides
+    if "MMTICKERLAB_RAW_DB" in os.environ:
+        return Path(os.environ["MMTICKERLAB_RAW_DB"]).resolve()
+    if "MARKET_SKILL_DIR" in os.environ:
+        cand = Path(os.environ["MARKET_SKILL_DIR"]).resolve() / "data" / "market_raw.db"
+        if cand.exists():
+            return cand
+
+    skill_dir = Path(__file__).resolve().parents[1]
+    root = Path.cwd()
+
+    candidates = [
+        # User current working directory / workspace
+        root / "market" / "data" / "market_raw.db",
+        root / "data" / "market_raw.db",
+        # Sibling directory (covers both repo root and ~/.gemini/config/skills/)
+        skill_dir.parent / "market" / "data" / "market_raw.db",
+        # Relative to parents of skill
+        skill_dir.parent.parent / "market" / "data" / "market_raw.db",
+        # Common user-installed global skill locations
+        Path.home() / ".gemini" / "config" / "skills" / "market" / "data" / "market_raw.db",
+        Path.home() / ".claude" / "skills" / "market" / "data" / "market_raw.db",
+        Path.home() / ".config" / "skills" / "market" / "data" / "market_raw.db",
+        # User home fallback
+        Path.home() / ".mmtickerlab" / "market_raw.db",
+        Path.home() / ".mmtickerlab" / "data" / "market_raw.db",
+    ]
+
+    for cand in candidates:
+        if cand.exists():
+            return cand
+
+    return skill_dir.parent / "market" / "data" / "market_raw.db"
 
 
 def get_kline_bars(

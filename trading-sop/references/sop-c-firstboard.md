@@ -16,7 +16,7 @@
 
 ## Step 1：全市场赚钱效应评估（plan-review）
 
-读取 `plan-review/SKILL.md`，确保盘后复盘报告已生成（`report/YYYYMMDD_盘后复盘.md`）。
+读取 `plan-review/SKILL.md`，确保盘后复盘报告已生成（`./report/daily/YYYYMMDD_盘后复盘.md` 或 `./report/YYYYMMDD_盘后复盘.md`）。
 
 从报告中提取首板隔夜策略所需的环境指标：
 - 今日首板数量（首次涨停家数）

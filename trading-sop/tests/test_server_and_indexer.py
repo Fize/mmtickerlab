@@ -64,6 +64,17 @@ class ReportIndexerTests(unittest.TestCase):
         self.assertEqual(detail["metadata"]["code"], "600176")
         self.assertIn("玻纤龙头", detail["body_markdown"])
 
+    def test_find_report_dir(self) -> None:
+        # Test explicit dir
+        custom = self.report_dir / "custom_report"
+        found = report_indexer.find_report_dir(custom)
+        self.assertEqual(found, custom.resolve())
+        self.assertTrue(custom.exists())
+
+        # Test env override
+        with mock.patch.dict("os.environ", {"MMTICKERLAB_REPORT_DIR": str(custom)}):
+            self.assertEqual(report_indexer.find_report_dir(), custom.resolve())
+
 
 class MarketReaderTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -125,6 +136,11 @@ class MarketReaderTests(unittest.TestCase):
         self.assertIn("Test Chart", svg)
         self.assertIn("</svg>", svg)
 
+    def test_get_default_db_path_env(self) -> None:
+        custom_db = Path("/tmp/custom_market.db")
+        with mock.patch.dict("os.environ", {"MMTICKERLAB_RAW_DB": str(custom_db)}):
+            self.assertEqual(market_reader.get_default_db_path(), custom_db.resolve())
+
 
 class ServerEndpointsTests(unittest.TestCase):
     def test_server_handler_routes(self) -> None:
@@ -133,9 +149,6 @@ class ServerEndpointsTests(unittest.TestCase):
         self.assertTrue(hasattr(handler, "do_GET"))
         self.assertTrue(hasattr(handler, "send_json"))
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 import threading
 import urllib.request
@@ -146,7 +159,7 @@ class LiveServerIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.port = 18099
         cls.host = "127.0.0.1"
-        cls.report_dir = REPO_ROOT = Path(__file__).resolve().parents[2] / "report"
+        cls.report_dir = report_indexer.find_report_dir()
         server.DashboardHandler.report_dir = cls.report_dir
         cls.httpd = server.ThreadingHTTPServer((cls.host, cls.port), server.DashboardHandler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
@@ -187,3 +200,7 @@ class LiveServerIntegrationTests(unittest.TestCase):
             self.assertIn("image/svg+xml", resp.headers.get("Content-Type", ""))
             svg = resp.read().decode("utf-8")
             self.assertTrue(svg.startswith("<svg"))
+
+
+if __name__ == "__main__":
+    unittest.main()
