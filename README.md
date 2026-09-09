@@ -58,10 +58,10 @@ flowchart TD
 各技能输出的标准化报告均归档至 `report/` 目录（涵盖 `daily/` 日内复盘、`ticker/` 个股决策总报、`strategy/` 策略决策、`industry/` 行业研报、`sop/` 执行摘要）。内置轻量 HTTP 服务可一键开启可视化交互看板，并直连 `market` 数据底座提供动态 K 线与均线/成交量/MACD/RSI 交互指标图表：
 
 ```bash
-# 启动投研看板（纯标准库，零外部依赖）
-python3 trading-sop/scripts/server.py --port 8088
+# 启动投研看板（默认端口 19876，纯标准库，零外部依赖）
+python3 trading-sop/scripts/server.py
 
-# 浏览器访问：http://127.0.0.1:8088
+# 浏览器访问：http://127.0.0.1:19876
 ```
 
 ---

@@ -131,7 +131,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "File Not Found")
 
 
-def run_server(port: int = 8088, host: str = "127.0.0.1", report_dir: Path | str | None = None) -> None:
+def run_server(port: int = 19876, host: str = "127.0.0.1", report_dir: Path | str | None = None) -> None:
     r_dir = find_report_dir(report_dir)
     r_dir.mkdir(parents=True, exist_ok=True)
     DashboardHandler.report_dir = r_dir
@@ -150,7 +150,7 @@ def run_server(port: int = 8088, host: str = "127.0.0.1", report_dir: Path | str
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MMTickerLab Dashboard HTTP Server")
-    parser.add_argument("--port", type=int, default=8088, help="Port to listen on (default: 8088)")
+    parser.add_argument("--port", type=int, default=19876, help="Port to listen on (default: 19876)")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--report-dir", help="Directory containing reports (default: report/)")
     args = parser.parse_args()

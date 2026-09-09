@@ -172,11 +172,11 @@ description: A股交易标准操作程序（SOP）总编排。从用户的自然
 执行完毕后，可启动内置轻量 HTTP 服务一键浏览历史报告，并联动 `market` 底座渲染专业级 K 线与均线/成交量/MACD/RSI 交互式图表：
 
 ```bash
-# 启动仪表盘服务（默认端口 8088）
-python3 trading-sop/scripts/server.py --port 8088
+# 启动仪表盘服务（默认端口 19876）
+python3 trading-sop/scripts/server.py
 
 # 浏览器访问：
-# http://127.0.0.1:8088
+# http://127.0.0.1:19876
 ```
 
 - **核心 API 接口**：
