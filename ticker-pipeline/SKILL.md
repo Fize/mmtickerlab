@@ -176,9 +176,11 @@ invoke_subagent(
 
 ## 阶段四：标准化输出规范
 
-根据风控审查裁决与数据完整性状态，最终交付对应维度的标准化报告。
+根据风控审查裁决与数据完整性状态，最终交付对应维度的标准化报告，并**统一写入归档文件** `report/ticker/YYYYMMDD_{CODE}_{标的名称}_投研决策总报.md`（带标准 Frontmatter，参见 [`templates/ticker_report.md`](templates/ticker_report.md)）。
 
 ### 场景 1：风控通过交付《标的全维度投研与风控决策总报》
+
+归档路径：`report/ticker/YYYYMMDD_{CODE}_{标的名称}_投研决策总报.md`
 
 ```markdown
 # 《标的全维度投研与风控决策总报》：[标的名称] ([标的代码])

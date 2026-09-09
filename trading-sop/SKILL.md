@@ -148,6 +148,40 @@ description: A股交易标准操作程序（SOP）总编排。从用户的自然
 
 ---
 
+## 报告归档目录规范
+
+每条 SOP 链与各子技能生成的分析报告必须统一归档至根目录 `report/` 对应子目录中（均需附带标准 YAML Frontmatter 元数据）：
+
+| 报告类型 | 归档路径模式 | 责任技能 | 模板参考 |
+|---|---|---|---|
+| **SOP 执行摘要** | `report/sop/YYYYMMDD_SOP_{链路名称}_{标的代码}.md` | `trading-sop` | [`templates/sop_summary.md`](templates/sop_summary.md) |
+| **日内三段式复盘** | `report/daily/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md` | `plan-review` | `plan-review/templates/` |
+| **个股投研决策总报** | `report/ticker/YYYYMMDD_{CODE}_{标的名称}_投研决策总报.md` | `ticker-pipeline` | `ticker-pipeline/templates/ticker_report.md` |
+| **首板隔夜决策** | `report/strategy/YYYYMMDD_首板隔夜决策.md` | `first-board-overnight` | `first-board-overnight/templates/strategy_report.md` |
+| **行业深度研报** | `report/industry/YYYYMMDD_{行业名称}_行业深度研报.md` | `industry-research` | `industry-research/` |
+
+---
+
+## 交互式 Web 看板与 HTTP 服务
+
+执行完毕后，可启动内置轻量 HTTP 服务一键浏览历史报告，并联动 `market` 底座渲染专业级 K 线与均线/成交量/MACD/RSI 交互式图表：
+
+```bash
+# 启动仪表盘服务（默认端口 8088）
+python3 trading-sop/scripts/server.py --port 8088
+
+# 浏览器访问：
+# http://127.0.0.1:8088
+```
+
+- **核心 API 接口**：
+  - `GET /api/reports`：报告列表检索（支持 `?category=daily|ticker|strategy|sop` 过滤）
+  - `GET /api/report?path=...`：单篇报告 Markdown 与 Frontmatter 解析
+  - `GET /api/kline?code=600176`：查询标的 K 线历史及指标计算序列（SMA5/10/20、MACD、RSI6）
+  - `GET /api/chart/svg?code=600176`：生成独立 SVG 图表（支持离线内嵌）
+
+---
+
 ## 重要执行原则
 
 1. **渐进式披露**：调用每个技能时，先读该技能的 SKILL.md，按其规范执行，不要在本技能中硬编码任何命令行参数。
@@ -155,3 +189,4 @@ description: A股交易标准操作程序（SOP）总编排。从用户的自然
 3. **透明进度**：每个技能执行完毕后向用户报告一次中间状态，不要一次性沉默执行所有步骤。
 4. **阻断即停止**：任何技能返回数据缺失阻断信号，立即终止链路，输出《数据盲区安全阻断通知》，不继续后续步骤。
 5. **用户控制权**：在启动耗时较长的并行阶段（SOP-B Phase 1）前，先向用户确认目标标的和分析范围是否正确。
+6. **报告必落盘**：生成的总结报告必须同时写入对应 `report/` 子目录并附带 YAML Frontmatter，以便 Web 看板实时索引。

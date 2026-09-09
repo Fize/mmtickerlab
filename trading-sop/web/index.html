@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MMTickerLab 投研与决策看板</title>
+  <style>
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #111827;
+      --bg-card: #1f2937;
+      --bg-card-hover: #374151;
+      --border: #374151;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --up-red: #ef4444;
+      --down-green: #10b981;
+      --warning: #f59e0b;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.5px;
+    }
+    .brand span { color: var(--accent); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .search-input {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      width: 180px;
+      transition: border-color 0.2s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: var(--bg-card-hover); }
+
+    /* Layout */
+    .container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    aside {
+      width: 380px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .filter-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      background: var(--bg-base);
+    }
+    .filter-tab {
+      padding: 10px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text-muted);
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .filter-tab:hover { color: var(--text-main); }
+    .filter-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+      background: var(--bg-surface);
+    }
+
+    .report-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .report-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .report-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    .report-card.active {
+      border-color: var(--accent);
+      background: #1e3a8a25;
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      line-height: 1.4;
+      color: var(--text-main);
+    }
+    .card-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-category { background: #374151; color: #d1d5db; }
+    .badge-passed { background: #065f46; color: #34d399; }
+    .badge-blocked { background: #991b1b; color: #f87171; }
+    .badge-waiting { background: #854d0e; color: #fde047; }
+    .badge-code { background: #1e3a8a; color: #93c5fd; font-family: var(--font-mono); }
+
+    /* Main Area */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      background: var(--bg-base);
+    }
+
+    /* Chart Section */
+    .chart-section {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chart-ticker-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+    }
+    .chart-ticker-code {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 16px;
+    }
+    .chart-metrics {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .metric-item span {
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+    .chart-container {
+      width: 100%;
+      height: 380px;
+      background: #0b1120;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .chart-container svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Report Content Section */
+    .report-section {
+      flex: 1;
+      padding: 24px 32px;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .report-header-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .report-header-card h1 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+    .report-header-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .report-header-grid b { color: var(--text-main); }
+
+    /* Markdown Styling */
+    .markdown-body {
+      color: #e5e7eb;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+      color: #f9fafb;
+      margin: 24px 0 12px 0;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .markdown-body h1 { font-size: 22px; }
+    .markdown-body h2 { font-size: 18px; }
+    .markdown-body h3 { font-size: 15px; border-bottom: none; }
+    .markdown-body p { margin-bottom: 12px; }
+    .markdown-body ul, .markdown-body ol { margin: 0 0 14px 20px; }
+    .markdown-body li { margin-bottom: 4px; }
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    .markdown-body th, .markdown-body td {
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .markdown-body th { background: var(--bg-surface); color: #9ca3af; }
+    .markdown-body tr:nth-child(even) { background: #131d2e; }
+    .markdown-body blockquote {
+      border-left: 4px solid var(--accent);
+      background: #1e3a8a18;
+      padding: 10px 14px;
+      margin: 14px 0;
+      border-radius: 0 6px 6px 0;
+      color: #cbd5e1;
+    }
+    .markdown-body code {
+      font-family: var(--font-mono);
+      background: var(--bg-surface);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #60a5fa;
+    }
+    .markdown-body pre {
+      background: #0d131f;
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 14px 0;
+    }
+    .markdown-body pre code { background: none; padding: 0; color: #e2e8f0; }
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 300px;
+      color: var(--text-muted);
+      gap: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span>📈</span> MMTickerLab <span>投研看板</span>
+    </div>
+    <div class="header-actions">
+      <input type="text" id="tickerSearchInput" class="search-input" placeholder="输入股票代码 (如 600176)...">
+      <button class="btn" onclick="loadTickerChartFromInput()">查K线</button>
+      <button class="btn btn-secondary" onclick="refreshReports()">刷新报告</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Left Sidebar -->
+    <aside>
+      <div class="filter-tabs">
+        <div class="filter-tab active" data-category="all" onclick="filterCategory('all')">全部 (<span id="count-all">0</span>)</div>
+        <div class="filter-tab" data-category="daily" onclick="filterCategory('daily')">日内复盘</div>
+        <div class="filter-tab" data-category="ticker" onclick="filterCategory('ticker')">个股投研</div>
+        <div class="filter-tab" data-category="strategy" onclick="filterCategory('strategy')">策略决策</div>
+        <div class="filter-tab" data-category="industry" onclick="filterCategory('industry')">行业研报</div>
+        <div class="filter-tab" data-category="sop" onclick="filterCategory('sop')">SOP摘要</div>
+      </div>
+      <div class="report-list" id="reportList">
+        <div class="empty-state">加载中...</div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main>
+      <!-- Chart Display -->
+      <section class="chart-section" id="chartSection" style="display:none;">
+        <div class="chart-header">
+          <div class="chart-ticker-info">
+            <span class="chart-ticker-code" id="chartTickerCode">--</span>
+            <span id="chartTickerName" style="font-weight:600;">--</span>
+            <span id="chartLatestClose" style="font-family:var(--font-mono);font-size:15px;">--</span>
+          </div>
+          <div class="chart-metrics" id="chartMetrics">
+            <!-- Dynamic metric values -->
+          </div>
+        </div>
+        <div class="chart-container" id="chartContainer">
+          <div style="color:var(--text-muted);font-size:13px;">K 线与技术指标图表</div>
+        </div>
+      </section>
+
+      <!-- Report View -->
+      <section class="report-section" id="reportSection">
+        <div class="empty-state" id="reportEmpty">请从左侧选择一篇报告进行查看</div>
+        <div id="reportContent" style="display:none;">
+          <div class="report-header-card" id="reportMetaCard"></div>
+          <div class="markdown-body" id="reportMarkdown"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let allReports = [];
+    let currentCategory = 'all';
+    let currentReport = null;
+
+    async function init() {
+      await refreshReports();
+      // If code in URL or default code, load chart
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code') || '600176';
+      loadChart(code);
+    }
+
+    async function refreshReports() {
+      try {
+        const res = await fetch('/api/reports');
+        allReports = await res.json();
+        updateCategoryCounts();
+        renderReportList();
+      } catch (err) {
+        document.getElementById('reportList').innerHTML = '<div class="empty-state">获取报告列表失败</div>';
+      }
+    }
+
+    function updateCategoryCounts() {
+      document.getElementById('count-all').innerText = allReports.length;
+    }
+
+    function filterCategory(cat) {
+      currentCategory = cat;
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.category === cat);
+      });
+      renderReportList();
+    }
+
+    function renderReportList() {
+      const container = document.getElementById('reportList');
+      const filtered = allReports.filter(r => currentCategory === 'all' || r.category === currentCategory);
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无此分类报告</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(r => {
+        let vetoBadge = '';
+        if (r.veto_status === 'PASSED') vetoBadge = '<span class="badge badge-passed">VETO PASSED</span>';
+        else if (r.veto_status === 'BLOCKED') vetoBadge = '<span class="badge badge-blocked">VETO BLOCKED</span>';
+        else if (r.veto_status === 'WAITING_DATA') vetoBadge = '<span class="badge badge-waiting">DATA SAFE HALTED</span>';
+
+        const codeBadge = r.code ? `<span class="badge badge-code">${r.code}</span>` : '';
+        const ratingText = r.rating ? `<span style="font-size:11px;font-weight:600;">${r.rating}</span>` : '';
+
+        const activeClass = currentReport && currentReport.id === r.id ? 'active' : '';
+
+        return `
+          <div class="report-card ${activeClass}" onclick="selectReport('${r.relative_path}')">
+            <div class="card-meta">
+              <span>${r.date}</span>
+              <span>${r.category_label}</span>
+            </div>
+            <div class="card-title">${escapeHtml(r.title)}</div>
+            <div class="card-badges">
+              ${codeBadge}
+              ${vetoBadge}
+              ${ratingText}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function selectReport(relPath) {
+      try {
+        const res = await fetch(`/api/report?path=${encodeURIComponent(relPath)}`);
+        const data = await res.json();
+        currentReport = data;
+
+        document.getElementById('reportEmpty').style.display = 'none';
+        document.getElementById('reportContent').style.display = 'block';
+
+        const meta = data.metadata || {};
+        const metaCard = document.getElementById('reportMetaCard');
+        metaCard.innerHTML = `
+          <h1>${escapeHtml(data.metadata.title || data.filename)}</h1>
+          <div class="report-header-grid">
+            <div>基准日期: <b>${meta.date || '--'}</b></div>
+            <div>分类: <b>${data.relative_path.split('/')[0]}</b></div>
+            ${meta.code ? `<div>标的代码: <b>${meta.code} ${meta.ticker_name || ''}</b></div>` : ''}
+            ${meta.rating ? `<div>决策评级: <b>${meta.rating}</b></div>` : ''}
+            ${meta.veto_status ? `<div>风控门禁: <b>${meta.veto_status}</b></div>` : ''}
+            ${meta.target_price ? `<div>目标价: <b>${meta.target_price} 元</b></div>` : ''}
+            ${meta.stop_loss ? `<div>止损线: <b>${meta.stop_loss} 元</b></div>` : ''}
+          </div>
+        `;
+
+        // Render Markdown body
+        document.getElementById('reportMarkdown').innerHTML = parseSimpleMarkdown(data.body_markdown || data.raw_content);
+
+        // Highlight active card
+        renderReportList();
+
+        // If report has stock code, auto load chart!
+        if (meta.code) {
+          loadChart(meta.code, meta.ticker_name);
+        }
+      } catch (err) {
+        alert('读取报告详情失败: ' + err);
+      }
+    }
+
+    function loadTickerChartFromInput() {
+      const val = document.getElementById('tickerSearchInput').value.trim();
+      if (val) {
+        loadChart(val);
+      }
+    }
+
+    async function loadChart(code, name = '') {
+      const section = document.getElementById('chartSection');
+      section.style.display = 'flex';
+      document.getElementById('chartTickerCode').innerText = code;
+      document.getElementById('chartTickerName').innerText = name || '';
+
+      try {
+        // Fetch SVG chart directly from server
+        const res = await fetch(`/api/chart/svg?code=${encodeURIComponent(code)}`);
+        const svgText = await res.text();
+        document.getElementById('chartContainer').innerHTML = svgText;
+
+        // Fetch latest quote / indicator metrics
+        const klineRes = await fetch(`/api/kline?code=${encodeURIComponent(code)}&count=5`);
+        const klineData = await klineRes.json();
+        if (klineData && klineData.length > 0) {
+          const last = klineData[klineData.length - 1];
+          const isUp = (last.change_pct || 0) >= 0;
+          const color = isUp ? 'var(--up-red)' : 'var(--down-green)';
+          const sign = isUp ? '+' : '';
+
+          document.getElementById('chartLatestClose').innerHTML = `
+            <span style="color:${color};font-weight:700;">${last.close}</span>
+            <span style="color:${color};font-size:12px;">(${sign}${last.change_pct}%)</span>
+          `;
+
+          document.getElementById('chartMetrics').innerHTML = `
+            <div class="metric-item">日期: <span>${last.date}</span></div>
+            <div class="metric-item">成交额: <span>${formatMoney(last.turnover)}</span></div>
+            <div class="metric-item">换手: <span>${last.turnover_rate || '--'}%</span></div>
+            <div class="metric-item">MA5: <span>${last.sma5 || '--'}</span></div>
+            <div class="metric-item">MACD: <span>${last.macd || '--'}</span></div>
+            <div class="metric-item">RSI6: <span>${last.rsi6 || '--'}</span></div>
+          `;
+        }
+      } catch (e) {
+        document.getElementById('chartContainer').innerHTML = `<div style="color:var(--text-muted);font-size:13px;">标的 ${code} 暂无本地 K 线数据</div>`;
+      }
+    }
+
+    function formatMoney(val) {
+      if (!val) return '--';
+      const n = Number(val);
+      if (n >= 1e8) return (n / 1e8).toFixed(2) + ' 亿';
+      if (n >= 1e4) return (n / 1e4).toFixed(2) + ' 万';
+      return n.toFixed(0);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Lightweight markdown parser without external dependencies
+    function parseSimpleMarkdown(md) {
+      if (!md) return '';
+      let html = md;
+
+      // Code blocks
+      html = html.replace(/```([a-z0-9_-]*)\n([\s\S]*?)```/gm, (m, lang, code) => {
+        return `<pre><code class="lang-${lang}">${escapeHtml(code)}</code></pre>`;
+      });
+
+      // Headers
+      html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+      html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+      html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+      // Blockquotes
+      html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+      // Bold & Italic
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+      // Tables
+      html = html.replace(/((?:\|(?:[^\r\n\|]*)\|(?:\r?\n|$))+)/g, (match) => {
+        const lines = match.trim().split('\n');
+        if (lines.length < 2) return match;
+        let table = '<table>';
+        lines.forEach((line, idx) => {
+          if (line.includes('---')) return; // separator
+          const cols = line.split('|').slice(1, -1);
+          const tag = idx === 0 ? 'th' : 'td';
+          table += '<tr>' + cols.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+        });
+        table += '</table>';
+        return table;
+      });
+
+      // Paragraphs & Lists
+      html = html.replace(/^- (.*$)/gim, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+      html = html.replace(/\n\n/g, '<p></p>');
+
+      return html;
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>

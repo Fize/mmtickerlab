@@ -45,4 +45,4 @@ description: 基于可审计 A 股数据执行首板隔夜模拟策略的决策�
 8. `execution`：`NOT_REQUESTED`、`NOT_ATTEMPTED` 及原因，或 `sim-trade` 的真实订单 ID、状态与未成交数量；`RESEARCH_ONLY` 永远不得执行；
 9. `unknowns`：当前未采集或系统不支持的字段。
 
-不得只给总分。若使用评分，必须同时展示构成证据、反证和未知项。
+不得只给总分。若使用评分，必须同时展示构成证据、反证和未知项。决策完成后必须将标准化报告保存至 `report/strategy/YYYYMMDD_首板隔夜决策.md`（带标准 Frontmatter，参见 [`templates/strategy_report.md`](templates/strategy_report.md)），以便全局看板索引。
