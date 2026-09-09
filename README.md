@@ -25,6 +25,32 @@
 
 ---
 
+## 安装使用 (Installation)
+
+### 方式一：通过 ClawHub 一键安装（推荐）
+
+全套技能已发布至 [ClawHub 官方注册表](https://clawhub.ai/fize)。在 OpenClaw / Claude Code 等支持 Agent Skills 的环境中，可直接通过 CLI 一键安装：
+
+```bash
+# 强烈推荐：一键安装全套 10 个技能包（构建完整投研量化闭环）
+clawhub install @fize/trading-sop @fize/market @fize/ticker-pipeline @fize/asset-analysis @fize/risk-guard @fize/market-intel @fize/industry-research @fize/first-board-overnight @fize/plan-review @fize/sim-trade
+
+# 或根据需要单独安装指定技能：
+clawhub install @fize/trading-sop        # SOP 总调度入口与投研看板
+clawhub install @fize/market             # A 股/港美股行情与财务数据底座
+clawhub install @fize/sim-trade          # A 股确定性模拟交易引擎
+```
+
+### 方式二：通过 Git 源码加载
+
+直接克隆本仓库到项目的 `skills/` 目录或智能体全局技能目录（如 `~/.openclaw/skills/`）：
+
+```bash
+git clone https://github.com/Fize/mmtickerlab.git
+```
+
+---
+
 ## 投研与交易工作流（Pipeline）
 
 日常使用以 `trading-sop` 为统一入口，根据意图自动路由至对应链路；各技能亦可独立按需触发：
