@@ -6,10 +6,11 @@
 
 ## 技能一览 (Skills)
 
-仓库内包含 9 个标准化独立技能，各技能定位与入口说明如下：
+仓库内包含 10 个标准化独立技能，各技能定位与入口说明如下：
 
 | 层次 | 技能名称 (Slug) | 版本 | 核心功能与职能 | 核心文档 |
 |:---|:---|:---:|:---|:---|
+| **🗂️ SOP 总编排** | **`trading-sop`** | `1.0.0` | 所有投研与决策技能的入口调度层。识别用户意图（盘前/盘中/盘后/个股深研/首板隔夜），路由至对应 SOP 链，编排调用现有技能，汇总输出最终可操作建议。是日常交易流程的统一起点。 | [`trading-sop/SKILL.md`](trading-sop/SKILL.md) |
 | **并行流水线** | **`ticker-pipeline`** | `1.0.0` | 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。各专员 Prompt 独立存放于 `agents/`，底层数据直接调用 `market` 技能，数据缺失时严格终止阻断。 | [`ticker-pipeline/SKILL.md`](ticker-pipeline/SKILL.md) |
 | **底层数据** | **`market`** | `1.0.0` | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜与财务数据。优先使用问财，AKShare 仅作 A 股兜底。 | [`market/SKILL.md`](market/SKILL.md) |
 | **步骤 1：事实** | **`market-intel`** | `1.0.0` | 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、板块资金流向及盘中大单，输出客观《市场情报快报》。只报事实，不给建议。 | [`market-intel/SKILL.md`](market-intel/SKILL.md) |
@@ -24,31 +25,30 @@
 
 ## 投研与交易工作流（Pipeline）
 
-各技能之间既可独立按需触发，亦可通过 `ticker-pipeline` 组成多 Agent 并行的端到端决策流水线：
+日常使用以 `trading-sop` 为统一入口，根据意图自动路由至对应链路；各技能亦可独立按需触发：
 
 ```mermaid
 flowchart TD
-    subgraph 并行投研流水线 ["ticker-pipeline (多 Agent 并行投研流水线)"]
-        direction TB
-        subgraph Phase1 ["第一阶段：并发深度调研"]
-            P1A["fundamental-valuation-agent<br/>(真实EPS/多模型市值/技术面)"]
-            P1B["market-heat-agent<br/>(筹码集中度/主力资金流/龙虎榜)"]
-            P1C["intel-news-agent<br/>(宏观政策/行业热度/公司事件)"]
-        end
-        P1A & P1B & P1C --> Synth["第二阶段：决策评级合成<br/>(三档市值测算 + 初始买卖评级)"]
-        Synth --> Phase3["第三阶段：risk-guard-agent<br/>(量化自洽核验 + 大势乘数 + 一票否决门禁)"]
+    User(["用户输入"]) --> SOP{"trading-sop\n意图识别路由"}
+
+    SOP -->|"盘前/盘中/盘后"| SOP_A["SOP-A 日内研究主线"]
+    SOP -->|"研究个股"| SOP_B["SOP-B 个股深度研究"]
+    SOP -->|"首板隔夜"| SOP_C["SOP-C 首板隔夜决策"]
+
+    SOP_A --> MI["market-intel"] --> PR["plan-review"] --> RGA["risk-guard"]
+
+    subgraph pipeline ["ticker-pipeline（Phase 1 并行 → Phase 2 → VETO）"]
+        direction LR
+        P1A["fundamental-valuation-agent"] & P1B["market-heat-agent"] & P1C["intel-news-agent"]
+        P1A & P1B & P1C --> IR["industry-research / asset-analysis"] --> RGB["risk-guard（VETO）"]
     end
+    SOP_B --> pipeline
 
-    Phase3 -->|VETO: PASSED| Report["《标的全维度投研与风控决策总报》"]
-    Phase3 -->|VETO: BLOCKED| Blocked["《风控阻断安全警示》<br/>(强制观望/减仓)"]
+    SOP_C --> PR2["plan-review（盘后）"] --> MI2["market-intel"] --> FB["first-board-overnight"] --> RGC["risk-guard"]
 
-    subgraph 独立执行与复盘 ["独立执行与复盘 (可选闭环)"]
-        Report -.-> E["first-board-overnight / 投资执行"]
-        E -.-> F["sim-trade<br/>(A股T+1限价撮合与账本)"]
-        F -.-> G["plan-review<br/>(三段式盘前午间收盘复盘)"]
-    end
+    RGA & RGB & RGC --> OUT(["📋 可操作决策建议"])
 
-    market[("market<br/>(底层确定性数据底座)")] ===> P1A & P1B & P1C & Phase3
+    market[("market\n底层数据底座")] ===> P1A & P1B & P1C & RGB
 ```
 
 ---
