@@ -1,7 +1,12 @@
 ---
 name: market-intel
 version: 1.0.0
-description: 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、行业动态、板块资金流向及大单异动，输出标准化《市场情报快报》。只陈述客观事实，不夹带交易观点或操作建议。
+description: 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘（美股/A50/汇率）、板块资金流向及大单异动，输出标准化客观《市场情报快报》。只陈述客观事实，不夹带交易观点或操作建议。当用户需要获取市场情报、了解隔夜外盘行情、扫描宏观要闻或跟踪盘中主力资金与大单时触发（包含触发词：市场情报, 隔夜外盘, 盘前情报, 资金流向, 大单异动, market intel, overnight, macro news）。
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - python3
 ---
 
 # Market Intel — 市场情报与资讯扫描

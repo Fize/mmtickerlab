@@ -1,7 +1,12 @@
 ---
 name: risk-guard
 version: 1.0.0
-description: 量化信号校验与风控门禁 SOP。结合大势乘数校准量化信号自洽性，计算仓位上限、动态止损线与持仓集中度风险；在出现逻辑矛盾、严重背离或高风险时行使一票否决权（Veto Authority）。
+description: 量化信号校验与风控门禁 SOP。结合大势乘数校准量化信号自洽性，计算仓位上限、动态止损线与持仓集中度风险；在出现逻辑矛盾、顶底背离或高风险时行使一票否决权（Veto Authority）。当用户需要进行量化风控核验、计算仓位上限、设定动态止损线、排查系统性退潮风险或做买入前安全把关时触发（包含触发词：风控门禁, 一票否决, 仓位控制, 止损线, 信号校验, risk guard, veto, stop loss）。
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - python3
 ---
 
 # Risk Guard — 量化信号核验与风控门禁

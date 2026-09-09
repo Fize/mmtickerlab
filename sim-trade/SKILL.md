@@ -1,7 +1,12 @@
 ---
 name: sim-trade
 version: 1.0.0
-description: A股专用的确定性模拟交易系统。具备严格的数据真实性门禁、五档盘口撮合、T+1 规则、持仓盈亏及 SQLite 可审计账本。仅支持沪深京 A 股 6 位代码，不支持港美股模拟交易。
+description: A 股专用的确定性模拟交易系统。具备严格的数据真实性门禁、五档盘口真实撮合、T+1 规则、持仓盈亏计算及 SQLite 可审计流水账本。当用户需要进行模拟交易下单、模拟买入/卖出、查询模拟盘持仓、账户资产或重置模拟盘时触发（包含触发词：模拟买入, 模拟卖出, 模拟交易, 查持仓, 模拟盘, 交易账本, sim trade, paper trading）。
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - python3
 ---
 
 # Sim Trade — A股模拟交易系统
