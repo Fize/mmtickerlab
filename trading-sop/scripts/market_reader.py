@@ -136,6 +136,7 @@ def calculate_indicators(bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sma20 = moving_average(closes, 20)
     sma60 = moving_average(closes, 60)
     vol_ma5 = moving_average(volumes, 5)
+    vol_ma10 = moving_average(volumes, 10)
 
     # MACD (12, 26, 9)
     ema12 = exponential_average(closes, 12)
@@ -181,6 +182,7 @@ def calculate_indicators(bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "sma20": sma20[idx],
                 "sma60": sma60[idx],
                 "vol_ma5": vol_ma5[idx],
+                "vol_ma10": vol_ma10[idx],
                 "dif": dif[idx],
                 "dea": dea[idx],
                 "macd": macd[idx],
@@ -194,18 +196,18 @@ def calculate_indicators(bars: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def render_svg_chart(bars: list[dict[str, Any]], title: str = "A-Share Candlestick Chart") -> str:
     """Render an SVG chart containing Candlesticks, SMA5/10/20, Volume, and MACD."""
     if not bars:
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="800" height="400" fill="#0f172a"/><text x="400" y="200" fill="#94a3b8" text-anchor="middle" font-size="16">No K-Line Data Available</text></svg>'
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="800" height="400" fill="var(--bg-surface)"/><text x="400" y="200" fill="var(--fg-muted)" text-anchor="middle" font-size="16">No K-Line Data Available</text></svg>'
 
     data = calculate_indicators(bars)
-    width = 1000
-    height = 680
+    width = 1600
+    height = 400
     left = 60
-    right = 30
+    right = 40
     plot_width = width - left - right
 
-    price_top, price_bottom = 50.0, 360.0
-    vol_top, vol_bottom = 390.0, 480.0
-    macd_top, macd_bottom = 510.0, 630.0
+    price_top, price_bottom = 40.0, 220.0
+    vol_top, vol_bottom = 240.0, 300.0
+    macd_top, macd_bottom = 320.0, 380.0
 
     highs = [float(d["high"] or 0) for d in data if d["high"] is not None]
     lows = [float(d["low"] or 0) for d in data if d["low"] is not None]
@@ -231,30 +233,52 @@ def render_svg_chart(bars: list[dict[str, Any]], title: str = "A-Share Candlesti
             return (top + bottom) / 2
         return bottom - (val - low) * (bottom - top) / (high - low)
 
+    last_d = data[-1] if data else {}
+    def fmt(v, p=2):
+        return f"{v:.{p}f}" if v is not None else "--"
+
     elements: list[str] = [
-        f'<rect width="{width}" height="{height}" fill="#0f172a"/>',
-        f'<text x="{left}" y="32" fill="#f8fafc" font-size="18" font-weight="bold" font-family="system-ui, -apple-system, sans-serif">{html.escape(title)}</text>',
+        f'<rect width="{width}" height="{height}" fill="var(--bg-surface)"/>',
+        f'<text x="{left}" y="24" fill="var(--fg-primary)" font-size="16" font-weight="bold" font-family="system-ui, -apple-system, sans-serif">{html.escape(title)}</text>',
+        f'<text x="{left + 350}" y="24" font-size="12" font-family="sans-serif">'
+        f'<tspan fill="var(--chart-ma5)">MA5: {fmt(last_d.get("sma5"))}  </tspan>'
+        f'<tspan fill="var(--chart-ma10)">MA10: {fmt(last_d.get("sma10"))}  </tspan>'
+        f'<tspan fill="var(--chart-ma20)">MA20: {fmt(last_d.get("sma20"))}  </tspan>'
+        f'</text>',
         # Horizontal grids
-        f'<line x1="{left}" y1="{price_top}" x2="{width - right}" y2="{price_top}" stroke="#334155" stroke-dasharray="2 2"/>',
-        f'<line x1="{left}" y1="{price_bottom}" x2="{width - right}" y2="{price_bottom}" stroke="#334155"/>',
-        f'<line x1="{left}" y1="{vol_bottom}" x2="{width - right}" y2="{vol_bottom}" stroke="#334155"/>',
-        f'<line x1="{left}" y1="{macd_bottom}" x2="{width - right}" y2="{macd_bottom}" stroke="#334155"/>',
+        f'<line x1="{left}" y1="{price_top}" x2="{width - right}" y2="{price_top}" stroke="var(--border-base)" stroke-dasharray="2 2"/>',
+        f'<line x1="{left}" y1="{price_bottom}" x2="{width - right}" y2="{price_bottom}" stroke="var(--border-base)"/>',
+        f'<line x1="{left}" y1="{vol_bottom}" x2="{width - right}" y2="{vol_bottom}" stroke="var(--border-base)"/>',
+        f'<line x1="{left}" y1="{macd_bottom}" x2="{width - right}" y2="{macd_bottom}" stroke="var(--border-base)"/>',
         # Labels
-        f'<text x="{left - 8}" y="{price_top + 12}" fill="#94a3b8" font-size="11" text-anchor="end">{price_high:.2f}</text>',
-        f'<text x="{left - 8}" y="{price_bottom}" fill="#94a3b8" font-size="11" text-anchor="end">{price_low:.2f}</text>',
-        f'<text x="12" y="{vol_top + 14}" fill="#64748b" font-size="11">VOL</text>',
-        f'<text x="12" y="{macd_top + 14}" fill="#64748b" font-size="11">MACD</text>',
+        f'<text x="{left - 8}" y="{price_top + 12}" fill="var(--fg-muted)" font-size="11" text-anchor="end">{price_high:.2f}</text>',
+        f'<text x="{left - 8}" y="{price_bottom}" fill="var(--fg-muted)" font-size="11" text-anchor="end">{price_low:.2f}</text>',
+        f'<text x="{left}" y="{vol_top + 14}" font-size="11" font-family="sans-serif">'
+        f'<tspan fill="var(--fg-muted)">VOL(5, 10)  </tspan>'
+        f'<tspan fill="var(--chart-ma5)">MA5: {fmt(last_d.get("vol_ma5"), 0)}  </tspan>'
+        f'<tspan fill="var(--chart-ma10)">MA10: {fmt(last_d.get("vol_ma10"), 0)}  </tspan>'
+        f'</text>',
+        f'<text x="{left}" y="{macd_top + 14}" font-size="11" font-family="sans-serif">'
+        f'<tspan fill="var(--fg-muted)">MACD(12, 26, 9)  </tspan>'
+        f'<tspan fill="var(--chart-ma5)">DIF: {fmt(last_d.get("dif"))}  </tspan>'
+        f'<tspan fill="var(--chart-ma10)">DEA: {fmt(last_d.get("dea"))}  </tspan>'
+        f'<tspan fill="var(--fg-muted)">MACD: {fmt(last_d.get("macd"))}  </tspan>'
+        f'</text>',
     ]
 
     sma5_pts: list[str] = []
     sma10_pts: list[str] = []
     sma20_pts: list[str] = []
+    vol_ma5_pts: list[str] = []
+    vol_ma10_pts: list[str] = []
+    dif_pts: list[str] = []
+    dea_pts: list[str] = []
 
     for i, d in enumerate(data):
         x = left + (i + 0.5) * step
         o, h, l, c = float(d["open"]), float(d["high"]), float(d["low"]), float(d["close"])
         is_up = c >= o
-        color = "#ef4444" if is_up else "#10b981"
+        color = "var(--up-red)" if is_up else "var(--down-green)"
 
         yh = scale_y(h, price_low, price_high, price_top, price_bottom)
         yl = scale_y(l, price_low, price_high, price_top, price_bottom)
@@ -272,44 +296,56 @@ def render_svg_chart(bars: list[dict[str, Any]], title: str = "A-Share Candlesti
         vy = scale_y(v, 0, vol_max, vol_top, vol_bottom)
         elements.append(f'<rect x="{x - candle_w/2:.1f}" y="{vy:.1f}" width="{candle_w:.1f}" height="{vol_bottom - vy:.1f}" fill="{color}" opacity="0.75"/>')
 
-        # Moving Averages
-        if d["sma5"]:
+        # Volume Moving Averages
+        if d.get("vol_ma5") is not None:
+            vol_ma5_pts.append(f"{x:.1f},{scale_y(d['vol_ma5'], 0, vol_max, vol_top, vol_bottom):.1f}")
+        if d.get("vol_ma10") is not None:
+            vol_ma10_pts.append(f"{x:.1f},{scale_y(d['vol_ma10'], 0, vol_max, vol_top, vol_bottom):.1f}")
+
+        # Price Moving Averages
+        if d.get("sma5") is not None:
             sma5_pts.append(f"{x:.1f},{scale_y(d['sma5'], price_low, price_high, price_top, price_bottom):.1f}")
-        if d["sma10"]:
+        if d.get("sma10") is not None:
             sma10_pts.append(f"{x:.1f},{scale_y(d['sma10'], price_low, price_high, price_top, price_bottom):.1f}")
-        if d["sma20"]:
+        if d.get("sma20") is not None:
             sma20_pts.append(f"{x:.1f},{scale_y(d['sma20'], price_low, price_high, price_top, price_bottom):.1f}")
 
         # MACD
         m_bar = float(d["macd"])
         zero_y = scale_y(0.0, -macd_max, macd_max, macd_top, macd_bottom)
-        m_color = "#ef4444" if m_bar >= 0 else "#10b981"
+        m_color = "var(--up-red)" if m_bar >= 0 else "var(--down-green)"
         my = scale_y(m_bar, -macd_max, macd_max, macd_top, macd_bottom)
         elements.append(f'<rect x="{x - candle_w/3:.1f}" y="{min(my, zero_y):.1f}" width="{candle_w*2/3:.1f}" height="{max(abs(my - zero_y), 1.0):.1f}" fill="{m_color}"/>')
 
-    if sma5_pts:
-        elements.append(f'<polyline points="{" ".join(sma5_pts)}" fill="none" stroke="#fbbf24" stroke-width="1.2"/>')
-    if sma10_pts:
-        elements.append(f'<polyline points="{" ".join(sma10_pts)}" fill="none" stroke="#38bdf8" stroke-width="1.2"/>')
-    if sma20_pts:
-        elements.append(f'<polyline points="{" ".join(sma20_pts)}" fill="none" stroke="#c084fc" stroke-width="1.2"/>')
+        # MACD Lines (DIF & DEA)
+        if d.get("dif") is not None:
+            dif_pts.append(f"{x:.1f},{scale_y(d['dif'], -macd_max, macd_max, macd_top, macd_bottom):.1f}")
+        if d.get("dea") is not None:
+            dea_pts.append(f"{x:.1f},{scale_y(d['dea'], -macd_max, macd_max, macd_top, macd_bottom):.1f}")
 
-    # Legend
-    legend = (
-        f'<text x="{width - right}" y="30" text-anchor="end" font-size="11" font-family="sans-serif">'
-        f'<tspan fill="#fbbf24">MA5  </tspan>'
-        f'<tspan fill="#38bdf8">MA10  </tspan>'
-        f'<tspan fill="#c084fc">MA20  </tspan>'
-        f'</text>'
-    )
-    elements.append(legend)
+    if sma5_pts:
+        elements.append(f'<polyline points="{" ".join(sma5_pts)}" fill="none" stroke="var(--chart-ma5)" stroke-width="1.2"/>')
+    if sma10_pts:
+        elements.append(f'<polyline points="{" ".join(sma10_pts)}" fill="none" stroke="var(--chart-ma10)" stroke-width="1.2"/>')
+    if sma20_pts:
+        elements.append(f'<polyline points="{" ".join(sma20_pts)}" fill="none" stroke="var(--chart-ma20)" stroke-width="1.2"/>')
+
+    if vol_ma5_pts:
+        elements.append(f'<polyline points="{" ".join(vol_ma5_pts)}" fill="none" stroke="var(--chart-ma5)" stroke-width="1.0"/>')
+    if vol_ma10_pts:
+        elements.append(f'<polyline points="{" ".join(vol_ma10_pts)}" fill="none" stroke="var(--chart-ma10)" stroke-width="1.0"/>')
+
+    if dif_pts:
+        elements.append(f'<polyline points="{" ".join(dif_pts)}" fill="none" stroke="var(--chart-ma5)" stroke-width="1.2"/>')
+    if dea_pts:
+        elements.append(f'<polyline points="{" ".join(dea_pts)}" fill="none" stroke="var(--chart-ma10)" stroke-width="1.2"/>')
 
     # Date labels at bottom
     for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
         idx = min(round((len(data) - 1) * frac), len(data) - 1)
         x = left + (idx + 0.5) * step
         d_str = html.escape(data[idx]["date"])
-        elements.append(f'<text x="{x:.1f}" y="655" fill="#64748b" font-size="10" text-anchor="middle" font-family="sans-serif">{d_str}</text>')
+        elements.append(f'<text x="{x:.1f}" y="396" fill="var(--fg-meta)" font-size="10" text-anchor="middle" font-family="sans-serif">{d_str}</text>')
 
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">' + "".join(elements) + "</svg>\n"
 

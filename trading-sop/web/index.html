@@ -6,38 +6,42 @@
   <title>MMTickerLab 投研与决策看板 | Financial Research Terminal</title>
   <style>
     /* =========================================================================
-       1. Color Tokens & Design System (Linear Dark + Neutral Modern Dual Theme)
+       1. Color Tokens & Design System (Neutral Modern Dual Theme)
        ========================================================================= */
     :root {
       /* Dark mode (Default Native) */
-      --bg-canvas: #08090a;
-      --bg-surface: #121417;
-      --bg-surface-warm: #1a1d23;
-      --fg-primary: #f7f8f8;
-      --fg-secondary: #d0d6e0;
-      --fg-muted: #8a8f98;
-      --fg-meta: #62666d;
+      --bg-canvas: #09090b;
+      --bg-surface: #18181b;
+      --bg-surface-warm: #27272a;
+      --fg-primary: #fafafa;
+      --fg-secondary: #e4e4e7;
+      --fg-muted: #a1a1aa;
+      --fg-meta: #71717a;
 
-      --border-base: rgba(255, 255, 255, 0.08);
-      --border-soft: rgba(255, 255, 255, 0.04);
+      --border-base: rgba(255, 255, 255, 0.1);
+      --border-soft: rgba(255, 255, 255, 0.05);
       --shadow-base: 0 4px 16px rgba(0, 0, 0, 0.14);
       --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.14);
 
-      /* Accent Discipline: Linear Indigo (Strictly max 2 uses per screen) */
-      --accent-main: #5e6ad2;
+      --accent-main: #3b82f6;
       --accent-on: #ffffff;
-      --accent-hover: #828fff;
-      --accent-active: #4752c4;
-      --accent-tint: rgba(94, 106, 210, 0.12);
+      --accent-hover: #60a5fa;
+      --accent-active: #2563eb;
+      --accent-tint: rgba(59, 130, 246, 0.15);
 
       /* A-Share Financial Semantic Indicators */
       --up-red: #ef4444;
-      --up-red-tint: rgba(239, 68, 68, 0.12);
+      --up-red-tint: rgba(239, 68, 68, 0.15);
       --down-green: #10b981;
-      --down-green-tint: rgba(16, 185, 129, 0.12);
+      --down-green-tint: rgba(16, 185, 129, 0.15);
       --warn-amber: #f59e0b;
-      --warn-amber-tint: rgba(245, 158, 11, 0.12);
-      --info-cyan: #0099bc;
+      --warn-amber-tint: rgba(245, 158, 11, 0.15);
+      --info-cyan: #0ea5e9;
+
+      /* Chart MA lines */
+      --chart-ma5: #fbbf24;
+      --chart-ma10: #38bdf8;
+      --chart-ma20: #c084fc;
 
       /* Typography & Layout Spacings */
       --font-ui: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -48,31 +52,37 @@
 
     /* Manual Light Mode Toggle */
     [data-theme="light"] {
-      --bg-canvas: #f7f8f8;
+      --bg-canvas: #f4f4f5;
       --bg-surface: #ffffff;
-      --bg-surface-warm: #f3f4f5;
-      --fg-primary: #08090a;
-      --fg-secondary: #424242;
-      --fg-muted: #616161;
-      --fg-meta: #8a8f98;
+      --bg-surface-warm: #fafafa;
+      --fg-primary: #09090b;
+      --fg-secondary: #3f3f46;
+      --fg-muted: #71717a;
+      --fg-meta: #a1a1aa;
 
-      --border-base: #d0d6e0;
-      --border-soft: #e5e7eb;
-      --shadow-base: 0 4px 16px rgba(0, 0, 0, 0.14);
-      --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.14);
+      --border-base: #e4e4e7;
+      --border-soft: #f4f4f5;
+      --shadow-base: 0 4px 16px rgba(0, 0, 0, 0.06);
+      --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.08);
 
-      --accent-main: #5e6ad2;
+      --accent-main: #2563eb;
       --accent-on: #ffffff;
-      --accent-hover: #4752c4;
-      --accent-active: #3840a2;
-      --accent-tint: rgba(94, 106, 210, 0.08);
+      --accent-hover: #1d4ed8;
+      --accent-active: #1e40af;
+      --accent-tint: rgba(37, 99, 235, 0.1);
 
       --up-red: #dc2626;
-      --up-red-tint: rgba(220, 38, 38, 0.08);
+      --up-red-tint: rgba(220, 38, 38, 0.1);
       --down-green: #059669;
-      --down-green-tint: rgba(5, 150, 105, 0.08);
+      --down-green-tint: rgba(5, 150, 105, 0.1);
       --warn-amber: #d97706;
-      --warn-amber-tint: rgba(217, 119, 6, 0.08);
+      --warn-amber-tint: rgba(217, 119, 6, 0.1);
+      --info-cyan: #0284c7;
+
+      /* Chart MA lines */
+      --chart-ma5: #d97706;
+      --chart-ma10: #0284c7;
+      --chart-ma20: #9333ea;
     }
 
     /* =========================================================================
@@ -222,9 +232,13 @@
       gap: 8px;
       cursor: pointer;
       border: 1px solid transparent;
-      transition: all 0.15s ease;
+      transition: transform 0.1s cubic-bezier(0, 0, 0.2, 1), background 0.15s ease, color 0.15s ease;
       user-select: none;
       font-family: "Segoe UI", sans-serif;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
     }
 
     .btn-primary {
@@ -263,13 +277,35 @@
       border: 1px solid var(--border-base);
       color: var(--fg-secondary);
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: transform 0.1s cubic-bezier(0, 0, 0.2, 1), background 0.15s ease, color 0.15s ease;
       font-family: "Segoe UI", sans-serif;
     }
 
     .btn-icon:hover {
       background: var(--bg-surface-warm);
       color: var(--fg-primary);
+    }
+
+    .btn-icon:active {
+      transform: scale(0.92);
+    }
+
+    /* Button Loading State */
+    .btn.is-loading {
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.is-loading::before {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
     /* =========================================================================
@@ -284,7 +320,7 @@
     }
 
     /* Sidebar Navigation (Fluent NavigationView) */
-    aside[role="region"] {
+    aside.sidebar-region {
       width: var(--sidebar-width);
       min-width: var(--sidebar-width);
       background: var(--bg-surface);
@@ -297,7 +333,7 @@
       z-index: 10;
     }
 
-    aside.collapsed {
+    aside.sidebar-region.collapsed {
       margin-left: calc(-1 * var(--sidebar-width));
       opacity: 0;
       pointer-events: none;
@@ -364,12 +400,16 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      transition: all 0.15s;
+      transition: transform 0.1s ease, background 0.15s, color 0.15s;
     }
 
     .segment-tab:hover {
       background: var(--bg-surface-warm);
       color: var(--fg-primary);
+    }
+
+    .segment-tab:active {
+      transform: scale(0.96);
     }
 
     .segment-tab.active {
@@ -412,7 +452,7 @@
       border-radius: 6px;
       padding: 12px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: transform 0.1s cubic-bezier(0, 0, 0.2, 1), background 0.15s ease, border-color 0.15s ease;
       position: relative;
       display: flex;
       flex-direction: column;
@@ -423,7 +463,10 @@
     .report-card:hover {
       background: var(--bg-surface-warm);
       border-color: var(--accent-main);
-      transform: translateY(-1px);
+    }
+
+    .report-card:active {
+      transform: scale(0.98);
     }
 
     .report-card.selected {
@@ -476,77 +519,105 @@
       align-items: center;
       gap: 4px;
       font-family: "Segoe UI", sans-serif;
+      border: 1px solid transparent;
+      transition: transform 0.1s ease, filter 0.15s ease;
+    }
+    
+    button.tag-pill:hover {
+      filter: brightness(1.1);
+    }
+    
+    button.tag-pill:active {
+      transform: scale(0.95);
     }
 
     .tag-code {
       font-family: "Segoe UI Mono", "Segoe UI", monospace;
       background: var(--bg-surface-warm);
-      border: 1px solid var(--border-base);
+      border-color: var(--border-base);
       color: var(--fg-secondary);
     }
 
     .tag-rating {
       background: var(--accent-tint);
       color: var(--accent-main);
-      border: 1px solid rgba(94, 106, 210, 0.2);
+      border-color: rgba(59, 130, 246, 0.2);
     }
 
     .tag-passed {
       background: var(--down-green-tint);
       color: var(--down-green);
-      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-color: rgba(16, 185, 129, 0.2);
     }
 
     .tag-blocked {
       background: var(--up-red-tint);
       color: var(--up-red);
-      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.2);
     }
 
     .tag-halted {
       background: var(--warn-amber-tint);
       color: var(--warn-amber);
-      border: 1px solid rgba(245, 158, 11, 0.2);
+      border-color: rgba(245, 158, 11, 0.2);
     }
 
     .tag-category {
       background: transparent;
       color: var(--fg-muted);
-      border: 1px solid var(--border-base);
+      border-color: var(--border-base);
     }
 
     /* =========================================================================
        5. Main Reading & Chart Workspace
        ========================================================================= */
-    main[role="main"] {
+    main.reading-area {
       flex: 1;
       height: calc(100%);
-      overflow-y: auto;
+      overflow: hidden; /* Do not scroll main */
       background: var(--bg-canvas);
       display: flex;
       flex-direction: column;
       position: relative;
     }
 
-    /* Stock Ticker Ribbon & Technical Chart Section */
-    .chart-panel {
+    /* Top Panel: Chart */
+    section.chart-panel {
+      width: 100%;
+      height: 45vh;
+      min-height: 360px;
       background: var(--bg-surface);
       border-bottom: 1px solid var(--border-base);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
       position: relative;
-      transition: all 0.2s ease;
+      transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+      z-index: 10;
+      overflow: hidden;
+    }
+    
+    section.chart-panel.collapsed {
+      height: 0;
+      opacity: 0;
+      pointer-events: none;
+      border-bottom-color: transparent;
     }
 
     .ticker-ribbon {
-      padding: 8px 20px;
+      padding: 12px 16px;
       display: flex;
+      flex-direction: row;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid var(--border-soft);
+      gap: 12px;
+    }
+    
+    .ticker-ribbon-header {
+      display: flex;
+      align-items: center;
       gap: 16px;
-      flex-wrap: wrap;
     }
 
     .ticker-profile {
@@ -585,9 +656,7 @@
 
     .ticker-metrics-grid {
       display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      gap: 24px;
     }
 
     .metric-cell {
@@ -611,8 +680,8 @@
     }
 
     .chart-viewport {
+      flex: 1;
       width: calc(100%);
-      height: 384px;
       background: var(--bg-surface);
       display: flex;
       align-items: center;
@@ -623,20 +692,24 @@
 
     .chart-viewport svg {
       width: calc(100%);
-      height: calc(100%);
+      height: auto;
+      max-height: calc(100%);
       display: block;
     }
 
     /* Report Detail Viewport */
     .report-viewport {
-      flex: 1;
-      padding: 24px 32px 48px 32px;
-      max-width: 992px;
-      width: calc(100%);
-      margin: 0 auto;
+      flex: 1; /* Take up remaining height */
+      overflow-y: auto; /* Scroll independently */
+      padding: 24px 40px 64px 40px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      align-items: center;
+    }
+    
+    .report-viewport > * {
+      width: 100%;
+      max-width: 1440px;
     }
 
     /* Structured Metadata Card */
@@ -645,6 +718,7 @@
       border: 1px solid var(--border-base);
       border-radius: 8px;
       padding: 20px 24px;
+      margin-bottom: 24px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
     }
 
@@ -1091,63 +1165,64 @@
             日内复盘 <span class="segment-badge" id="count-daily">0</span>
           </button>
           <button class="segment-tab" role="tab" aria-label="个股投研分类" aria-selected="false" data-category="ticker" onclick="selectCategory('ticker')">
-            个股投研 <span class="segment-badge" id="count-ticker">0</span>
-          </button>
-          <button class="segment-tab" role="tab" aria-label="策略决策分类" aria-selected="false" data-category="strategy" onclick="selectCategory('strategy')">
-            策略决策 <span class="segment-badge" id="count-strategy">0</span>
-          </button>
-          <button class="segment-tab" role="tab" aria-label="行业研报分类" aria-selected="false" data-category="industry" onclick="selectCategory('industry')">
-            行业研报 <span class="segment-badge" id="count-industry">0</span>
-          </button>
-          <button class="segment-tab" role="tab" aria-label="SOP摘要分类" aria-selected="false" data-category="sop" onclick="selectCategory('sop')">
-            SOP摘要 <span class="segment-badge" id="count-sop">0</span>
-          </button>
+          <input type="text" id="reportFilterInput" class="filter-input" placeholder="输入代码 / 标题 / 评级过滤..." oninput="handleReportFilter()">
+        </div>
+        <div class="filter-segment-list" role="tablist" aria-label="研报分类">
+          <button class="segment-tab active" role="tab" aria-selected="true" data-category="all" onclick="selectCategory('all')">全部</button>
+          <button class="segment-tab" role="tab" aria-selected="false" data-category="daily" onclick="selectCategory('daily')">日内复盘</button>
+          <button class="segment-tab" role="tab" aria-selected="false" data-category="ticker" onclick="selectCategory('ticker')">个股投研</button>
+          <button class="segment-tab" role="tab" aria-selected="false" data-category="strategy" onclick="selectCategory('strategy')">策略决策</button>
+          <button class="segment-tab" role="tab" aria-selected="false" data-category="industry" onclick="selectCategory('industry')">行业研报</button>
+          <button class="segment-tab" role="tab" aria-selected="false" data-category="sop" onclick="selectCategory('sop')">SOP</button>
         </div>
       </div>
-
-      <!-- Card List Area -->
-      <div class="report-card-list" id="reportListContainer" role="list">
-        <!-- Dynamic report cards / Skeletons inserted here -->
+      <div class="report-card-list" id="reportListContainer">
+        <!-- Rendered dynamically -->
       </div>
     </aside>
 
-    <!-- Main Reading & Charting Canvas -->
-    <main role="main">
-      <!-- Candlestick & Technical Indicator Section -->
-      <section class="chart-panel" id="chartSection" style="display:none;" aria-label="K线与指标走势">
+    <!-- Main Reading Workspace -->
+    <main role="main" class="reading-area" id="mainContent">
+      <!-- Top Panel: Chart (Collapsible) -->
+      <section class="chart-panel collapsed" id="chartSection" aria-label="K线图表">
         <div class="ticker-ribbon">
-          <div class="ticker-profile">
-            <span class="ticker-symbol" id="chartTickerCode">--</span>
-            <span class="ticker-name" id="chartTickerName">--</span>
-            <span class="ticker-price-tag" id="chartLatestClose">--</span>
+          <div class="ticker-ribbon-header">
+            <div class="ticker-profile">
+              <span class="ticker-symbol" id="chartTickerCode">--</span>
+              <span class="ticker-name" id="chartTickerName">--</span>
+            </div>
+            <div class="ticker-price-tag">
+              <span id="chartLatestClose" style="color: var(--up-red);">--</span>
+            </div>
           </div>
-
           <div class="ticker-metrics-grid" id="chartMetricsRibbon">
-            <!-- Dynamic Indicators -->
+            <!-- Populated from API -->
           </div>
-
-          <div>
-            <button class="btn btn-subtle" style="height:32px;padding:0 8px;font-size:11px;" aria-label="收起K线图表" onclick="toggleChartSection(false)">
-              收起图表
+          <div style="display: flex; align-items: center;">
+            <button class="btn btn-subtle" style="height:24px;padding:0 8px;font-size:11px;" aria-label="收起K线图表" onclick="toggleChartSection(false)">
+              收起面板 ✕
             </button>
           </div>
         </div>
-
-        <div class="chart-viewport" id="chartContainer" aria-label="行情图表绘图区">
-          <div class="empty-state-card">
-            <div class="empty-state-icon">📊</div>
-            <div class="empty-state-title">正在绘制 K 线图表...</div>
-          </div>
+        <div class="chart-viewport" id="chartContainer">
+          <!-- SVG Injected Here -->
         </div>
       </section>
 
-      <!-- Active Report Viewport -->
-      <section class="report-viewport" id="reportReadingViewport">
-        <!-- Initial Empty State -->
-        <div class="empty-state-card" id="reportEmptyState">
-          <div class="empty-state-icon">📑</div>
-          <div class="empty-state-title">请从左侧选择一篇研报查看</div>
-          <div class="empty-state-desc">支持个股深度研究、首板隔夜决策、每日复盘等标准化报告，点击含标的代码的报告可自动联动 K 线。</div>
+      <!-- Bottom Panel: Report Reading Viewport -->
+      <section class="report-viewport" id="reportViewport">
+        <div id="reportEmptyState" class="empty-state-card" style="margin-top: 10vh;">
+          <div class="empty-state-icon">📄</div>
+          <div class="empty-state-title">未选择研报</div>
+          <div class="empty-state-desc">请从左侧列表选择一份研报阅读。</div>
+        </div>
+
+        <div id="reportLoadingState" class="skeleton-wrapper" style="display:none;">
+          <div class="skeleton-shimmer"></div>
+          <div class="skeleton-box" style="height:48px; width:60%; border-radius:6px;"></div>
+          <div class="skeleton-box" style="height:24px; width:100%; border-radius:4px; margin-top:24px;"></div>
+          <div class="skeleton-box" style="height:24px; width:90%; border-radius:4px;"></div>
+          <div class="skeleton-box" style="height:24px; width:95%; border-radius:4px;"></div>
         </div>
 
         <!-- Populated Content Area -->
@@ -1155,9 +1230,8 @@
           <div class="metadata-hero-card" id="metadataHeroCard">
             <!-- Rendered Metadata Hero -->
           </div>
-
-          <article class="markdown-surface" id="markdownRenderSurface" aria-label="研报正文">
-            <!-- Rendered Markdown Body -->
+          <article class="markdown-surface" id="reportMarkdownBody">
+            <!-- Rendered Markdown -->
           </article>
         </div>
       </section>
@@ -1282,9 +1356,26 @@
       } else {
         isChartVisible = !isChartVisible;
       }
-      section.style.display = isChartVisible ? 'flex' : 'none';
-      if (isChartVisible && activeStockCode) {
-        loadChart(activeStockCode);
+      
+      if (isChartVisible) {
+        section.classList.remove('collapsed');
+        if (activeStockCode) {
+          loadChart(activeStockCode);
+        } else {
+          document.getElementById('chartContainer').innerHTML = `
+            <div class="empty-state-card">
+              <div class="empty-state-icon">📊</div>
+              <div class="empty-state-title">请输入代码查询 K 线</div>
+              <div class="empty-state-desc">在右上角输入股票代码并点击"查K线"，或在左侧选择关联个股的研报。</div>
+            </div>
+          `;
+          document.getElementById('chartTickerCode').innerText = '--';
+          document.getElementById('chartTickerName').innerText = '';
+          document.getElementById('chartLatestClose').innerText = '--';
+          document.getElementById('chartMetricsRibbon').innerHTML = '';
+        }
+      } else {
+        section.classList.add('collapsed');
       }
     }
 
@@ -1302,6 +1393,8 @@
 
     // Reports Data & Rendering
     async function refreshReports() {
+      const btn = document.getElementById('btnRefresh');
+      if (btn) btn.classList.add('is-loading');
       try {
         const res = await fetch('/api/reports');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1323,6 +1416,8 @@
             <button class="btn btn-subtle" aria-label="重试获取报告" onclick="refreshReports()">重试连接</button>
           </div>
         `;
+      } finally {
+        if (btn) btn.classList.remove('is-loading');
       }
     }
 
@@ -1394,9 +1489,9 @@
           vetoTag = '<span class="tag-pill tag-halted">DATA SAFE HALTED</span>';
         }
 
-        const codeTag = r.code ? `<span class="tag-pill tag-code">${r.code}</span>` : '';
-        const ratingTag = r.rating ? `<span class="tag-pill tag-rating">${r.rating}</span>` : '';
-        const categoryTag = `<span class="tag-pill tag-category">${r.category_label || r.category}</span>`;
+        const codeTag = r.code ? `<button class="tag-pill tag-code" onclick="event.stopPropagation(); document.getElementById('reportFilterInput').value='${r.code}'; handleReportFilter();" style="cursor:pointer;" title="筛选此代码">${r.code}</button>` : '';
+        const ratingTag = r.rating ? `<button class="tag-pill tag-rating" onclick="event.stopPropagation(); document.getElementById('reportFilterInput').value='${r.rating}'; handleReportFilter();" style="cursor:pointer;" title="筛选此评级">${r.rating}</button>` : '';
+        const categoryTag = `<button class="tag-pill tag-category" onclick="event.stopPropagation(); selectCategory('${r.category}');" style="cursor:pointer;" title="查看此分类">${r.category_label || r.category}</button>`;
 
         return `
           <div class="report-card ${isSelected ? 'selected' : ''}"
@@ -1446,6 +1541,10 @@
 
     // Select & Read Single Report
     async function selectReport(relPath) {
+      document.getElementById('reportEmptyState').style.display = 'none';
+      document.getElementById('reportActiveContent').style.display = 'none';
+      document.getElementById('reportLoadingState').style.display = 'block';
+      
       try {
         const res = await fetch(`/api/report?path=${encodeURIComponent(relPath)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1453,7 +1552,7 @@
         currentReport = data;
 
         // Render Report Detail View
-        document.getElementById('reportEmptyState').style.display = 'none';
+        document.getElementById('reportLoadingState').style.display = 'none';
         document.getElementById('reportActiveContent').style.display = 'block';
 
         const meta = data.metadata || {};
@@ -1506,7 +1605,7 @@
         `;
 
         // Render Markdown content
-        const mdSurface = document.getElementById('markdownRenderSurface');
+        const mdSurface = document.getElementById('reportMarkdownBody');
         mdSurface.innerHTML = parseAdvancedMarkdown(data.body_markdown || data.raw_content);
 
         // Highlight selected card in list
@@ -1518,6 +1617,8 @@
           loadChart(meta.code, meta.ticker_name);
         }
       } catch (err) {
+        document.getElementById('reportLoadingState').style.display = 'none';
+        document.getElementById('reportEmptyState').style.display = 'block';
         showToast(`读取报告详情失败: ${err.message}`);
       }
     }
@@ -1525,15 +1626,22 @@
     // Chart & Market Indicator Loader
     function loadTickerChartFromInput() {
       const code = document.getElementById('tickerSearchInput').value.trim();
+      const btn = document.getElementById('btnSearchChart');
       if (code) {
-        loadChart(code);
+        if (btn) btn.classList.add('is-loading');
+        loadChart(code).finally(() => {
+          if (btn) btn.classList.remove('is-loading');
+        });
+      } else {
+        showToast('请输入股票代码或拼音');
+        document.getElementById('tickerSearchInput').focus();
       }
     }
 
     async function loadChart(code, name = '') {
       activeStockCode = code;
       const section = document.getElementById('chartSection');
-      section.style.display = 'flex';
+      section.classList.remove('collapsed');
       isChartVisible = true;
 
       document.getElementById('chartTickerCode').innerText = code;
