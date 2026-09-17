@@ -17,7 +17,7 @@
     "asset-analysis": {"version": "1.1.0", "slug": "@fize/asset-analysis"},
     "first-board-overnight": {"version": "1.1.0", "slug": "@fize/first-board-overnight"},
     "ticker-pipeline": {"version": "1.1.0", "slug": "@fize/ticker-pipeline"},
-    "trading-sop": {"version": "1.1.0", "slug": "@fize/trading-sop"},
+    "trading-sop": {"version": "1.1.1", "slug": "@fize/trading-sop"},
     "sim-trade": {"version": "1.0.0", "slug": "@fize/sim-trade"}
   }
 }

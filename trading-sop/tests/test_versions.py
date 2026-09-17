@@ -14,7 +14,7 @@ class VersionContractTests(unittest.TestCase):
     def test_project_and_skill_versions_are_consistent(self):
         result = check_versions.load_manifest(ROOT)
         self.assertEqual(result["project"], "1.1.0")
-        self.assertEqual(result["skills"]["trading-sop"]["version"], "1.1.0")
+        self.assertEqual(result["skills"]["trading-sop"]["version"], "1.1.1")
         self.assertEqual(result["skills"]["sim-trade"]["version"], "1.0.0")
 
     def test_major_version_policy_is_explicit(self):
