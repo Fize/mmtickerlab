@@ -1,6 +1,5 @@
 ---
 name: market
-version: 1.0.0
 description: 获取经过日期、时效和完整性校验的 A 股/港美股原始行情与量化数据。支持查询实时报价、多周期 K 线、20+ 项确定性技术指标、涨跌停池、资金流向、大单异动、筹码分布、财务三大表及资讯新闻。当用户需要查询股票数据、获取实时行情、绘制 K 线图表、计算技术指标或检索财务数据时触发（包含触发词：查行情, 查K线, 查指标, 涨跌停池, 资金流向, 龙虎榜, 筹码分布, 财务报表, market data, stock quote, kline）。
 metadata:
   openclaw:
@@ -12,6 +11,8 @@ metadata:
 # Market Data
 
 本技能只负责采集、校验和输出数据。所有命令从项目根目录运行，stdout 只包含一个 JSON 文档；重试和供应商诊断写入 stderr。全市场快照、板块资金流、大单和完整财务报表落盘后返回紧凑视图与 `raw.path`，需要明细时按路径局部读取。不要根据数据在本技能内生成主线、周期、买卖或仓位结论。
+
+本技能可以独立运行，不要求先生成其他 Skill 的报告。数据缺失时可从已配置的供应商或权威交易所来源补充，但必须核验日期、时点、字段、单位和覆盖范围；来源冲突或关键字段仍不可核验时直接阻断，并保留结构化阻断原因。
 
 原始明细是聚合结果的事实基础。现有命令获取到明细时同步写入 `market/data/market_raw.db`；重复内容去重，供应商修订保留为新观察版本。用户查询本地没有的数据时先尝试供应商，只有供应商也无法提供时才阻断。
 
@@ -69,9 +70,16 @@ market/.venv/bin/python market/scripts/market_data.py flows --date YYYYMMDD --se
 market/.venv/bin/python market/scripts/market_data.py big-deals --date YYYYMMDD
 market/.venv/bin/python market/scripts/market_data.py lhb --date YYYYMMDD
 market/.venv/bin/python market/scripts/market_data.py overnight --date YYYYMMDD
+
+# 核心商品期货行情（贵金属、有色、黑色、能源、农业、新能源材料）
+market/.venv/bin/python market/scripts/market_data.py commodities --date YYYYMMDD
 ```
 
-`snapshot`、`flows` 只能在当天午间 11:30-13:00 或收盘 15:05 后采集。龙虎榜只能在当天 16:30 后采集。`overnight`、实时行情和当前证券主表不能回填历史日期。分钟线按目标日期截断。
+`snapshot`、`flows` 只能在当天午间 11:30-13:00 或收盘 15:05 后采集。龙虎榜只能在当天 16:30 后采集。`overnight`、`commodities`、实时行情和当前证券主表不能回填历史日期。分钟线按目标日期截断。商品行情必须保留具体品种、单位、时间戳和交易状态；缺少核心品种时命令阻断。
+
+恐慌贪婪指数的计算工具位于 `plan-review/scripts/derived_metrics.py`，版本为 `fg-v1`；`market` 只提供其底层行情，不在数据技能内生成市场定性结论。
+
+稀土目前没有统一的国内稀土期货主连合约，报告应单独接入并标记稀土现货报价，不得把现货价格伪装成期货行情。
 
 ## 个股数据
 

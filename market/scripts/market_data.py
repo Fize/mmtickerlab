@@ -1044,6 +1044,88 @@ def _final_global_row(frame: pd.DataFrame, now: datetime) -> dict[str, Any]:
     }
 
 
+COMMODITY_SYMBOLS = {
+    # The first value is the exact name expected by futures_symbol_mark().
+    # “主连” is an Eastmoney historical-series suffix and is not accepted by
+    # Sina's futures_zh_realtime endpoint.
+    "贵金属": [("黄金", "黄金主连", "元/克"), ("白银", "白银主连", "元/千克")],
+    "工业金属": [("沪铜", "沪铜主连", "元/吨"), ("沪铝", "沪铝主连", "元/吨"),
+                 ("沪锌", "沪锌主连", "元/吨"), ("沪镍", "沪镍主连", "元/吨"),
+                 ("沪锡", "沪锡主连", "元/吨")],
+    "黑色": [("铁矿石", "铁矿石主连", "元/吨"), ("螺纹钢", "螺纹钢主连", "元/吨"),
+             ("焦煤", "焦煤主连", "元/吨"), ("焦炭", "焦炭主连", "元/吨")],
+    "能源": [("原油", "原油主连", "元/桶"), ("燃油", "燃料油主连", "元/吨")],
+    "农业": [("豆粕", "豆粕主连", "元/吨"), ("玉米", "玉米主连", "元/吨"),
+             ("白糖", "白糖主连", "元/吨"), ("棉花", "棉花主连", "元/吨")],
+    "新能源材料": [("碳酸锂", "碳酸锂主连", "元/吨"), ("工业硅", "工业硅主连", "元/吨")],
+}
+GLOBAL_COMMODITY_SYMBOLS = {
+    "贵金属": [("GC", "COMEX黄金", "USD/盎司"), ("SI", "COMEX白银", "USD/盎司")],
+    "能源": [("CL", "NYMEX WTI原油", "USD/桶"), ("OIL", "ICE布伦特原油", "USD/桶")],
+}
+
+
+def _commodity_row(
+    frame: pd.DataFrame,
+    category: str,
+    instrument: str,
+    unit: str,
+    *,
+    change_is_fraction: bool = False,
+) -> dict[str, Any]:
+    """Normalize provider columns so report consumers receive one stable row shape."""
+    if frame.empty:
+        raise DataError(f"商品行情无数据：{instrument}")
+    row = frame.iloc[0]
+    price_col = next((name for name in ("最新价", "最新", "现价", "trade", "price", "last") if name in frame.columns), None)
+    change_col = next((name for name in ("涨跌幅", "涨跌幅(%)", "涨幅", "changepercent", "change_percent", "change_pct") if name in frame.columns), None)
+    if not price_col or not change_col:
+        raise DataError(f"商品行情字段不完整：{instrument}")
+    price = number(row.get(price_col))
+    change = percent_number(row.get(change_col))
+    if change is not None and change_is_fraction:
+        change *= 100
+    if price is None or change is None:
+        raise DataError(f"商品行情数值无效：{instrument}")
+    as_of = (clean_number(row.get("时间")) or clean_number(row.get("更新时间"))
+             or clean_number(row.get("行情时间")) or clean_number(row.get("ticktime"))
+             or now_shanghai().isoformat())
+    return {
+        "category": category, "instrument": instrument, "price": price,
+        "change_pct": change, "change_5d": percent_number(row.get("5日涨跌幅", row.get("change_5d"))),
+        "unit": unit, "as_of": str(as_of), "status": "intraday",
+    }
+
+
+def commodities_dataset(target: date) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for category, instruments in COMMODITY_SYMBOLS.items():
+        for symbol, instrument, unit in instruments:
+            try:
+                frame = ak_call(ak.futures_zh_realtime, symbol=symbol)
+                rows.append(_commodity_row(frame, category, instrument, unit, change_is_fraction=True))
+            except Exception as exc:
+                errors.append(f"{instrument}: {exc}")
+    for category, instruments in GLOBAL_COMMODITY_SYMBOLS.items():
+        for symbol, instrument, unit in instruments:
+            try:
+                # GC/CL/OIL look like overseas stock symbols to the generic
+                # adapter.  Explicitly mark this as a domestic data route so
+                # the futures endpoint is not blocked by stock-market guards.
+                frame = ak_call(ak.futures_foreign_commodity_realtime, symbol=symbol, market="cn")
+                rows.append(_commodity_row(frame, category, instrument, unit))
+            except Exception as exc:
+                errors.append(f"{instrument}: {exc}")
+    expected_count = sum(len(v) for v in COMMODITY_SYMBOLS.values()) + sum(len(v) for v in GLOBAL_COMMODITY_SYMBOLS.values())
+    if errors:
+        raise DataError("核心商品行情获取或核验失败：" + "；".join(errors))
+    return envelope("commodity_market", target, "AKShare.futures_zh_realtime + futures_foreign_commodity_realtime",
+                    {"rows": rows, "instrument_count": len(rows)},
+                    [check("core_instruments", len(rows) == expected_count,
+                           f"Loaded {len(rows)} core commodity instruments")])
+
+
 def overnight_dataset(target: date) -> dict[str, Any]:
     now = now_shanghai()
     if target != now.date():
@@ -2005,7 +2087,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Strict JSON market data for agents")
     parser.add_argument("dataset", choices=[
         "calendar", "master", "indices", "snapshot", "limits", "flows", "big-deals", "lhb",
-        "overnight", "watchlist", "quote", "kline", "technical", "chips", "sentiment",
+        "overnight", "commodities", "watchlist", "quote", "kline", "technical", "chips", "sentiment",
         "stock-flow", "financials", "news", "raw",
     ])
     parser.add_argument("--date", required=True, help="目标日期 YYYYMMDD")
@@ -2054,6 +2136,7 @@ def main() -> int:
             "big-deals": lambda: big_deals_dataset(target),
             "lhb": lambda: lhb_dataset(target),
             "overnight": lambda: overnight_dataset(target),
+            "commodities": lambda: commodities_dataset(target),
             "watchlist": lambda: watchlist_dataset(target, args.count),
             "quote": lambda: quote_dataset(target, args.code),
             "kline": lambda: kline_dataset(target, args.code, args.period, args.count, args.adjust, at),

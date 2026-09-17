@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import unittest
+from unittest import mock
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,6 +37,49 @@ class SessionGateTests(unittest.TestCase):
             date(2026, 8, 12), "noon", datetime(2026, 8, 12, 13, 0, tzinfo=tz)
         )
         self.assertFalse(allowed)
+
+    def test_commodity_row_normalizes_price_and_status(self) -> None:
+        frame = pd.DataFrame([{"合约": "沪金主连", "最新价": 800.5, "涨跌幅": 1.2}])
+        row = report_data._commodity_row(frame, "贵金属", "沪金主连", "元/克")
+        self.assertEqual(row["instrument"], "沪金主连")
+        self.assertEqual(row["price"], 800.5)
+        self.assertEqual(row["status"], "intraday")
+
+    def test_commodity_row_normalizes_sina_domestic_columns(self) -> None:
+        # futures_zh_realtime returns trade/changepercent; changepercent is a
+        # fraction (for example 0.004122 means +0.4122%).
+        frame = pd.DataFrame([{"trade": 6090.0, "changepercent": 0.004122, "ticktime": "15:00:00"}])
+        row = report_data._commodity_row(
+            frame, "农业", "白糖主连", "元/吨", change_is_fraction=True
+        )
+        self.assertEqual(row["price"], 6090.0)
+        self.assertAlmostEqual(row["change_pct"], 0.4122)
+        self.assertEqual(row["as_of"], "15:00:00")
+
+    def test_domestic_symbols_use_sina_symbol_mark_names(self) -> None:
+        symbols = {symbol for instruments in report_data.COMMODITY_SYMBOLS.values()
+                   for symbol, _, _ in instruments}
+        self.assertNotIn("黄金主连", symbols)
+        self.assertNotIn("沪铜主连", symbols)
+        self.assertIn("黄金", symbols)
+        self.assertIn("沪铜", symbols)
+        self.assertIn("工业硅", symbols)
+
+    def test_global_futures_route_bypasses_stock_market_guard(self) -> None:
+        frame = pd.DataFrame([{"最新价": 2500.0, "涨跌幅": 1.5}])
+        with mock.patch.object(report_data.ak, "futures_foreign_commodity_realtime", return_value=frame):
+            result = report_data.ak_call(
+                report_data.ak.futures_foreign_commodity_realtime,
+                symbol="GC",
+                market="cn",
+            )
+        self.assertEqual(result.iloc[0]["最新价"], 2500.0)
+
+    def test_commodities_dataset_blocks_when_core_contract_missing(self) -> None:
+        with mock.patch.object(report_data.ak, "futures_zh_realtime", return_value=pd.DataFrame()):
+            with mock.patch.object(report_data.ak, "futures_foreign_commodity_realtime", return_value=pd.DataFrame()):
+                with self.assertRaisesRegex(report_data.DataError, "核心商品行情获取或核验失败"):
+                    report_data.commodities_dataset(date(2026, 8, 12))
 
 
 class OverseasFinalizationTests(unittest.TestCase):
