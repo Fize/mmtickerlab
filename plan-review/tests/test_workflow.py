@@ -84,6 +84,23 @@ class WorkflowValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "无法读取数据文件"):
             workflow.validate("20260813", "pre", None)
 
+    def test_optional_report_returns_none_when_missing(self) -> None:
+        self.assertIsNone(workflow._optional_report("20260813", "pre"))
+
+    def test_extra_heading_blocks_report(self) -> None:
+        bundle = self._write_bundle()
+        report = Path(bundle["report_path"])
+        report.write_text(self._valid_report() + "\n## 额外说明\n补充内容\n", encoding="utf-8")
+        with self.assertRaisesRegex(workflow.WorkflowError, "未允许的章节"):
+            workflow.validate("20260813", "pre", str(report))
+
+    def test_task_instruction_phrase_blocks_report(self) -> None:
+        bundle = self._write_bundle()
+        report = Path(bundle["report_path"])
+        report.write_text(self._valid_report().replace("# 报告", "# 报告\n\n只做计划，不做交易。"), encoding="utf-8")
+        with self.assertRaisesRegex(workflow.WorkflowError, "任务或执行说明"):
+            workflow.validate("20260813", "pre", str(report))
+
     def test_snapshot_date_mismatch_is_rejected(self) -> None:
         path = self.data / "20260812" / "market_snapshot_close.json"
         path.parent.mkdir(parents=True)
@@ -139,6 +156,19 @@ class TemplateTests(unittest.TestCase):
         text = (Path(__file__).resolve().parents[1] / "templates" / "post_market.md").read_text(encoding="utf-8")
         for stage in ("观察", "启动", "扩散", "高潮", "分歧", "退潮"):
             self.assertIn(f"| {stage} |", text)
+
+    def test_noon_and_post_templates_require_market_overview_modules(self) -> None:
+        for name in ("intraday_review.md", "post_market.md"):
+            text = (Path(__file__).resolve().parents[1] / "templates" / name).read_text(encoding="utf-8")
+            for heading in ("## 市场概览", "## 恐慌贪婪指数", "## 商品行情"):
+                self.assertIn(heading, text)
+
+    def test_templates_do_not_render_generation_instructions(self) -> None:
+        template_dir = Path(__file__).resolve().parents[1] / "templates"
+        for path in template_dir.glob("*.md"):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("根据你的要求", text)
+            self.assertNotIn("工具调用", text)
 
 
 if __name__ == "__main__":

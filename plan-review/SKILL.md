@@ -1,6 +1,5 @@
 ---
 name: plan-review
-version: 1.0.0
 description: 基于已校验市场数据生成盘前计划、午间复盘和收盘复盘的三段式交易操作系统，并提供交易日志记录与纪律打分功能。当用户提到盘前准备、盘中复盘、午间复盘、盘后复盘、收盘复盘、今日计划、写日志或交易日志时触发（包含触发词：盘前准备, 午间复盘, 晚间复盘, 交易计划, 复盘, 写日志, 交易日志, 今日计划, 纪律打分, plan review）。
 metadata:
   openclaw:
@@ -11,7 +10,7 @@ metadata:
 
 # Plan & Review — 盘前计划与盘中/盘后复盘
 
-这是一个只读的市场研究与复盘流程。三类报告分别回答：开盘前需要观察什么、午间哪些假设得到验证、收盘后全天结构如何演变。
+这是一个只读的市场研究与复盘流程。三类报告分别回答：开盘前需要观察什么、午间哪些假设得到验证、收盘后全天结构如何演变。午间和盘后市场复盘可以独立运行；只有“复核既有假设”部分需要对应的前置报告。
 
 ## 技能协同与工作流衔接
 
@@ -29,6 +28,8 @@ metadata:
 7. `market` 只提供数据。报告中的市场定性、题材阶段、假设与反证必须由你读取数据包后完成，不能期待数据脚本返回结论。
 8. 必须实际使用数据包中的全市场涨跌分布与排行、指数历史、连板梯队、行业分布及行业/概念 1/3/5 日资金流；不能只摘录汇总家数。
 9. 盘中比较前一交易日收盘与午间原始数据；盘后比较午间与收盘原始数据，不从前置报告文本反推数值。
+10. 午间和盘后报告必须包含市场概览、恐慌贪婪指数和商品行情三个模块；数据不足时明确阻断或标记不可计算，不填默认中性值。
+11. 报告只能使用模板规定的章节和字段，不复述用户任务、工具调用或执行边界；正式报告通过脚本校验后才能交付。
 
 ## 环境
 
@@ -76,11 +77,11 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py capture --phase lhb
 plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase pre --date YYYYMMDD
 ```
 
-成功后读取返回的数据包和 [templates/pre_market.md](templates/pre_market.md)，创建 `report/YYYYMMDD_盘前计划.md`。必须检查指数多周期数据、市场宽度与涨跌分布、异动排行、连板梯队和行业分布、1/3/5 日资金排行及自选股 K 线/指标。重点说明隔夜背景、前日结构、最多三条今日假设及其失效条件。
+成功后读取返回的数据包和 [templates/pre_market.md](templates/pre_market.md)，创建 `report/daily/YYYYMMDD_盘前计划.md`。必须检查指数多周期数据、市场宽度与涨跌分布、异动排行、连板梯队和行业分布、1/3/5 日资金排行及自选股 K 线/指标。重点说明隔夜背景、前日结构、最多三条今日假设及其失效条件。
 
 ## 盘中复盘
 
-目标是用午间截面逐条复核盘前假设。没有同日盘前报告或午间快照时不能生成。
+目标是用午间截面复盘市场并逐条核对盘前假设。没有同日盘前报告时仍可生成独立市场复盘；没有午间快照时不能生成。
 
 先在午间窗口执行 `capture --phase noon`，再运行：
 
@@ -88,11 +89,11 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase pre
 plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase noon --date YYYYMMDD
 ```
 
-成功后读取数据包、同日盘前报告和 [templates/intraday_review.md](templates/intraday_review.md)，创建 `report/YYYYMMDD_盘中复盘.md`。每条盘前假设只能判为“确认、部分确认、失效、证据不足”之一，并写出下午需验证的收盘数据。
+成功后读取数据包和 [templates/intraday_review.md](templates/intraday_review.md)，如存在则读取同日盘前报告，创建 `report/daily/YYYYMMDD_盘中复盘.md`。报告必须先给出市场概览、恐慌贪婪指数、商品行情，再写上午事实；有盘前假设时逐条判为“确认、部分确认、失效、证据不足”之一，并写出下午需验证的收盘数据。
 
 ## 盘后复盘
 
-目标是复核全天判断、识别结构演变并形成次日研究清单。没有同日盘前报告、盘中报告或完整收盘快照时不能生成。
+目标是复核全天判断、识别结构演变并形成次日研究清单。盘后市场复盘可独立运行；若要比较午后变化，必须有完整午间快照；若要复核既有判断，则读取可验证的前置报告。
 
 15:05 后执行 `capture --phase close` 保存收盘市场快照；16:30 后执行 `capture --phase lhb` 补充龙虎榜。两者都成功后再运行：
 
@@ -100,7 +101,7 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase noo
 plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase post --date YYYYMMDD
 ```
 
-成功后读取数据包、前两份报告和 [templates/post_market.md](templates/post_market.md)，创建 `report/YYYYMMDD_盘后复盘.md`。
+成功后读取数据包和 [templates/post_market.md](templates/post_market.md)，如存在则读取前两份报告，创建 `report/daily/YYYYMMDD_盘后复盘.md`。报告必须先给出市场概览、恐慌贪婪指数、商品行情，再写收盘事实与结构判断。
 
 题材生命周期使用六类，而不是把不同维度混在同一分类中：
 
@@ -127,7 +128,9 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py validate --phase po
 
 - 原始报告快照：`market/data/report_snapshots/YYYYMMDD/`
 - 阶段数据包：`plan-review/data/YYYYMMDD/`
-- 报告：`report/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md`
+- 报告：`report/daily/YYYYMMDD_{盘前计划,盘中复盘,盘后复盘}.md`
 - 自选股（可选）：`data/watchlist.json`
+
+`plan-review/scripts/derived_metrics.py` 提供版本化的恐慌贪婪指数（`fg-v1`）和商品行情行校验；午间和盘后 `prepare` 会从已校验的市场快照、前一交易日基线和指数历史自动计算指数，分项缺失时阻断。它不依赖其他 Skill，可在独立安装的 plan-review 目录中调用。商品行情由 `market commodities` 数据命令采集后写入阶段数据包。
 
 快照和数据包是审计证据，不要手工修改。需要重新采集时重新运行 `capture`，并重新执行后续 `prepare` 与 `validate`。

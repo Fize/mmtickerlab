@@ -13,6 +13,36 @@
 - 结论：盘前和盘中报告均存在；独立采集的收盘快照与龙虎榜数据均已通过校验。
 - 证据范围：{{evidence_ids}}
 
+## 市场概览
+
+| 指标 | 收盘值 | 午后变化 | 较前日变化 | 证据 |
+|---|---:|---:|---:|---|
+| 主要指数与风格 | {{index_overview}} | {{style_change}} | {{day_change}} | {{evidence_id}} |
+| 全天成交额 | {{turnover}} | {{afternoon_turnover_change}} | {{turnover_day_change}} | {{evidence_id}} |
+| 上涨/平盘/下跌家数 | {{breadth_counts}} | {{afternoon_breadth_change}} | {{breadth_day_change}} | {{evidence_id}} |
+| 领涨/领跌板块 | {{leading_sectors}} | {{sector_change}} | {{sector_day_change}} | {{evidence_id}} |
+| 资金流向 | {{flow_overview}} | {{flow_change}} | {{flow_day_change}} | {{evidence_id}} |
+
+## 恐慌贪婪指数
+
+| 总分 | 等级 | 较午间 | 较前日收盘 | 计算版本 | 证据 |
+|---:|---|---:|---:|---|---|
+| {{fear_greed_score}} | {{fear_greed_level}} | {{fear_greed_noon_change}} | {{fear_greed_day_change}} | {{fear_greed_version}} | {{evidence_id}} |
+
+| 分项 | 得分 | 权重 | 贡献 | 证据 |
+|---|---:|---:|---:|---|
+| 成交量 | {{fg_volume_score}} | {{fg_volume_weight}} | {{fg_volume_contribution}} | {{evidence_id}} |
+| 市场广度 | {{fg_breadth_score}} | {{fg_breadth_weight}} | {{fg_breadth_contribution}} | {{evidence_id}} |
+| RSI | {{fg_rsi_score}} | {{fg_rsi_weight}} | {{fg_rsi_contribution}} | {{evidence_id}} |
+| 价格动量 | {{fg_momentum_score}} | {{fg_momentum_weight}} | {{fg_momentum_contribution}} | {{evidence_id}} |
+| 波动率 | {{fg_volatility_score}} | {{fg_volatility_weight}} | {{fg_volatility_contribution}} | {{evidence_id}} |
+
+## 商品行情
+
+| 类别 | 品种/合约 | 收盘/最新价 | 涨跌幅 | 5日变化 | 时点/状态 | 证据 |
+|---|---|---:|---:|---:|---|---|
+| {{commodity_category}} | {{commodity_contract}} | {{commodity_price}} | {{commodity_change}} | {{commodity_5d}} | {{commodity_asof}} | {{evidence_id}} |
+
 ## 收盘事实
 
 | 观察项 | 收盘事实 | 午后变化 | 证据 |
@@ -29,11 +59,7 @@
 |---|---|---|---|---|
 | {{judgment}} | 盘前/盘中 | 确认/部分确认/失效/证据不足 | {{fact_and_evidence}} | {{cause}} |
 
-必须区分“数据判断错误”“条件未触发”“盘中发生新信息”三类偏差，不用结果倒推当时本应知道的内容。
-
 ## 题材生命周期
-
-分类只允许以下六类，且必须同时检查广度、强度、持续性和资金一致性：
 
 | 分类 | 定义 |
 |---|---|
@@ -57,8 +83,6 @@
 | {{stock}} | {{detail}} | {{institution}} | {{bounded_conclusion}} | {{evidence_id}} |
 
 ## 次日研究清单
-
-这是待验证的研究清单，不是已发生事实。每个条目必须写出入选数据、待确认条件和删除条件；没有足够证据时明确写“无”。
 
 | 研究对象 | 入选依据 | 次日待确认 | 删除条件 | 证据 |
 |---|---|---|---|---|

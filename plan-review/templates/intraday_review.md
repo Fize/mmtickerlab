@@ -14,6 +14,36 @@
 - 快照窗口：11:30-13:00（Asia/Shanghai）
 - 证据范围：{{evidence_ids}}
 
+## 市场概览
+
+| 指标 | 午间值 | 相对前收/历史同期 | 证据 |
+|---|---:|---:|---|
+| 主要指数与风格 | {{index_overview}} | {{style_change}} | {{evidence_id}} |
+| 成交额 | {{turnover}} | {{turnover_change}} | {{evidence_id}} |
+| 上涨/平盘/下跌家数 | {{breadth_counts}} | {{breadth_change}} | {{evidence_id}} |
+| 领涨/领跌板块 | {{leading_sectors}} | {{sector_change}} | {{evidence_id}} |
+| 资金流向 | {{flow_overview}} | {{flow_change}} | {{evidence_id}} |
+
+## 恐慌贪婪指数
+
+| 总分 | 等级 | 较前一可比时点 | 计算版本 | 证据 |
+|---:|---|---:|---|---|
+| {{fear_greed_score}} | {{fear_greed_level}} | {{fear_greed_change}} | {{fear_greed_version}} | {{evidence_id}} |
+
+| 分项 | 得分 | 权重 | 贡献 | 证据 |
+|---|---:|---:|---:|---|
+| 成交量 | {{fg_volume_score}} | {{fg_volume_weight}} | {{fg_volume_contribution}} | {{evidence_id}} |
+| 市场广度 | {{fg_breadth_score}} | {{fg_breadth_weight}} | {{fg_breadth_contribution}} | {{evidence_id}} |
+| RSI | {{fg_rsi_score}} | {{fg_rsi_weight}} | {{fg_rsi_contribution}} | {{evidence_id}} |
+| 价格动量 | {{fg_momentum_score}} | {{fg_momentum_weight}} | {{fg_momentum_contribution}} | {{evidence_id}} |
+| 波动率 | {{fg_volatility_score}} | {{fg_volatility_weight}} | {{fg_volatility_contribution}} | {{evidence_id}} |
+
+## 商品行情
+
+| 类别 | 品种/合约 | 最新价 | 涨跌幅 | 5日变化 | 时点/状态 | 证据 |
+|---|---|---:|---:|---:|---|---|
+| {{commodity_category}} | {{commodity_contract}} | {{commodity_price}} | {{commodity_change}} | {{commodity_5d}} | {{commodity_asof}} | {{evidence_id}} |
+
 ## 上午市场事实
 
 | 观察项 | 午间事实 | 相对前收变化 | 证据 |
@@ -26,8 +56,6 @@
 | 大单数据（可选） | {{large_trades_or_unavailable}} | 仅作异常线索 | {{evidence_id}} |
 
 ## 与盘前假设的对照
-
-逐条引用盘前假设原文并判定“确认 / 部分确认 / 失效 / 证据不足”。不能新增一个未经盘前提出的假设来宣称判断正确。
 
 | 盘前假设 | 状态 | 午间证据 | 判断 |
 |---|---|---|---|

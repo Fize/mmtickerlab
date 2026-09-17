@@ -59,7 +59,7 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase pre
 
 ### 执行条件
 
-必须存在同日盘前计划报告（`./report/daily/YYYYMMDD_盘前计划.md` 或 `./report/YYYYMMDD_盘前计划.md`）。
+午间复盘可以独立运行。必须先取得并核验午间市场快照；同日盘前计划报告若存在则用于逐条复核，不存在时跳过该部分，不得把“缺少报告”当成市场数据。
 
 ### Step 1：午间快照采集
 
@@ -91,7 +91,7 @@ plan-review/.venv/bin/python plan-review/scripts/workflow.py prepare --phase noo
 
 ### 执行条件
 
-必须同时存在：盘前计划 + 盘中复盘 + 完整收盘快照。
+盘后复盘可以独立运行，但必须取得并核验完整收盘快照。盘前计划和盘中复盘只在存在时用于假设复核；若要比较午后结构，必须有午间快照。任何核心市场数据在采集、补充和核验后仍不可用时，停止本段链路。
 
 ### Step 1：收盘数据采集
 

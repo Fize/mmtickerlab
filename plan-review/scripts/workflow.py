@@ -18,11 +18,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 SKILL_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path.cwd()
-REPORT_DIR = ROOT / "report"
+# Keep daily reports in the directory consumed by trading-sop and its indexer.
+REPORT_DIR = ROOT / "report" / "daily"
 DATA_DIR = SKILL_DIR / "data"
+
+sys.path.insert(0, str(SKILL_DIR / "scripts"))
+from derived_metrics import fear_greed_from_market_data
 
 
 def find_market_dir() -> Path:
@@ -63,10 +66,11 @@ CAPTURE_DATASETS = {
 OPTIONAL_CAPTURE_DATASETS = {"noon": {"large_trades"}, "close": set(), "lhb": set()}
 REQUIRED_HEADINGS = {
     "pre": ["## 数据状态", "## 隔夜与市场背景", "## 前一交易日结构", "## 今日观察框架", "## 风险与失效条件", "## 数据来源"],
-    "noon": ["## 数据状态", "## 上午市场事实", "## 与盘前假设的对照", "## 结构变化", "## 下午观察框架", "## 数据来源"],
-    "post": ["## 数据状态", "## 收盘事实", "## 盘前与盘中判断复核", "## 题材生命周期", "## 龙虎榜事实", "## 次日研究清单", "## 数据来源"],
+    "noon": ["## 数据状态", "## 市场概览", "## 恐慌贪婪指数", "## 商品行情", "## 上午市场事实", "## 与盘前假设的对照", "## 结构变化", "## 下午观察框架", "## 数据来源"],
+    "post": ["## 数据状态", "## 市场概览", "## 恐慌贪婪指数", "## 商品行情", "## 收盘事实", "## 盘前与盘中判断复核", "## 题材生命周期", "## 龙虎榜事实", "## 次日研究清单", "## 数据来源"],
 }
 FORBIDDEN = ["sim-trade", "sim_trade", "模拟交易", "仿真交易", "纸上交易"]
+FORBIDDEN_REPORT_PHRASES = ["根据你的要求", "只做计划", "不做交易", "用户要求", "工具调用", "任务说明"]
 
 
 class WorkflowError(RuntimeError):
@@ -247,6 +251,16 @@ def _validated_report(day: str, phase: str) -> Path:
     return path
 
 
+def _optional_report(day: str, phase: str) -> Path | None:
+    """Return a validated prior report when present, so market-only reviews stay standalone."""
+    try:
+        path = _read_report(day, phase)
+    except WorkflowError:
+        return None
+    validate(day, phase, str(path))
+    return path
+
+
 def prepare(day: str, phase: str) -> dict[str, Any]:
     path = phase_dir(day) / f"{phase}_bundle.json"
     marker = {
@@ -301,38 +315,60 @@ def _prepare_ready(day: str, phase: str) -> dict[str, Any]:
         for recent_day in recent:
             datasets[f"limits_{recent_day}"] = market_call("limits", recent_day, session="close")
     elif phase == "noon":
-        prerequisites.append(str(_validated_report(day, "pre")))
+        pre_report = _optional_report(day, "pre")
+        if pre_report:
+            prerequisites.append(str(pre_report))
         noon_capture = _capture_manifest(day, "noon")
         datasets["noon_snapshot"] = _snapshot(day, "market_snapshot_noon")
         datasets["noon_flows"] = _snapshot(day, "fund_flows_noon")
         datasets["noon_limits"] = _snapshot(day, "limit_activity_noon")
         datasets["noon_indices"] = _snapshot(day, "index_history_noon")
+        datasets["commodities"] = market_call("commodities", day)
         datasets["previous_close"] = _snapshot(previous, "market_snapshot_close")
         datasets["previous_flows"] = _snapshot(previous, "fund_flows_close")
         datasets["previous_indices"] = _snapshot(previous, "index_history_close")
+        datasets["fear_greed"] = {
+            "dataset": "fear_greed_index", "target_date": day,
+            "source": "plan-review derived_metrics fg-v1", "retrieved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "status": "ready", "checks": [],
+            "data": fear_greed_from_market_data(datasets["noon_snapshot"], datasets["previous_close"], datasets["noon_indices"]),
+        }
         if "large_trades" in noon_capture["datasets"]:
             datasets["large_trades"] = _snapshot(day, "large_trades")
-        pre_bundle = load_json(phase_dir(day) / "pre_bundle.json")
-        datasets["pre_bundle_manifest"] = {
-            "dataset": "pre_bundle_manifest", "target_date": day,
-            "source": str(phase_dir(day) / "pre_bundle.json"),
-            "retrieved_at": pre_bundle["created_at"], "status": "ready", "checks": [],
-            "data": {"bundle_id": pre_bundle["bundle_id"]},
-        }
+        pre_bundle_path = phase_dir(day) / "pre_bundle.json"
+        if pre_bundle_path.exists():
+            pre_bundle = load_json(pre_bundle_path)
+            datasets["pre_bundle_manifest"] = {
+                "dataset": "pre_bundle_manifest", "target_date": day,
+                "source": str(pre_bundle_path),
+                "retrieved_at": pre_bundle["created_at"], "status": "ready", "checks": [],
+                "data": {"bundle_id": pre_bundle["bundle_id"]},
+            }
     else:
-        prerequisites.extend([str(_validated_report(day, "pre")), str(_validated_report(day, "noon"))])
+        for prior_phase in ("pre", "noon"):
+            prior_report = _optional_report(day, prior_phase)
+            if prior_report:
+                prerequisites.append(str(prior_report))
         _capture_manifest(day, "close")
         _capture_manifest(day, "lhb")
         datasets["close_snapshot"] = _snapshot(day, "market_snapshot_close")
         datasets["close_flows"] = _snapshot(day, "fund_flows_close")
         datasets["close_limits"] = _snapshot(day, "limit_activity_close")
         datasets["close_indices"] = _snapshot(day, "index_history_close")
+        datasets["previous_close"] = _snapshot(previous, "market_snapshot_close")
         datasets["dragon_tiger"] = _snapshot(day, "dragon_tiger")
         _capture_manifest(day, "noon")
         datasets["noon_snapshot"] = _snapshot(day, "market_snapshot_noon")
         datasets["noon_flows"] = _snapshot(day, "fund_flows_noon")
         datasets["noon_limits"] = _snapshot(day, "limit_activity_noon")
         datasets["noon_indices"] = _snapshot(day, "index_history_noon")
+        datasets["commodities"] = market_call("commodities", day)
+        datasets["fear_greed"] = {
+            "dataset": "fear_greed_index", "target_date": day,
+            "source": "plan-review derived_metrics fg-v1", "retrieved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "status": "ready", "checks": [],
+            "data": fear_greed_from_market_data(datasets["close_snapshot"], datasets["previous_close"], datasets["close_indices"]),
+        }
 
     bundle_id = f"{day}-{phase}-{datetime.now().astimezone():%Y%m%dT%H%M%S%z}"
     bundle = {
@@ -373,9 +409,23 @@ def validate(day: str, phase: str, report_arg: str | None) -> dict[str, Any]:
     for heading in REQUIRED_HEADINGS[phase]:
         if heading not in text:
             errors.append(f"缺少章节：{heading}")
+    headings = re.findall(r"^## .+$", text, flags=re.MULTILINE)
+    expected = REQUIRED_HEADINGS[phase]
+    if headings != expected:
+        extras = [heading for heading in headings if heading not in expected]
+        missing = [heading for heading in expected if heading not in headings]
+        if extras:
+            errors.append(f"包含未允许的章节：{extras}")
+        if not extras and not missing:
+            errors.append("章节顺序不符合模板")
     for token in FORBIDDEN:
         if token.lower() in text.lower():
             errors.append(f"包含禁止内容：{token}")
+    for phrase in FORBIDDEN_REPORT_PHRASES:
+        if phrase.lower() in text.lower():
+            errors.append(f"包含任务或执行说明：{phrase}")
+    if "{{" in text or "}}" in text:
+        errors.append("报告残留模板占位符")
     valid_ids = {item["id"] for item in bundle["evidence"]}
     cited_ids = set(re.findall(r"\[(E\d{2})\]", text))
     unknown = cited_ids - valid_ids
