@@ -7,16 +7,26 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name for release (e.g. v1.0.0)'
+        description: 'Tag name for release (e.g. v1.1.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.1.0'
 
 permissions:
   contents: write
 
 jobs:
+  verify-version:
+    name: Verify release version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check project and Skill versions
+        run: python3 scripts/check_versions.py --tag "${{ github.event.inputs.tag_name || github.ref_name }}"
+
   release:
     name: Create GitHub Release
+    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -32,4 +42,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

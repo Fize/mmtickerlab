@@ -2,7 +2,7 @@
 
 面向二级市场（A股/港美股）投研、量化分析与模拟交易的通用 Agent 技能库，适用于 Claude Code、OpenClaw 等多种智能体环境。
 
-**⚠️ 重要提示**：这是一个**完整的技能包矩阵（Skill Suite）**。各个技能之间存在深度的逻辑流转与底层数据（如 market 技能提供的行情底座）依赖。为了获得完整的投研决策流水线和可视化看板体验，**强烈建议将本仓库内的所有技能全部安装并配合使用**。
+**⚠️ 重要提示**：这是一个**完整的技能包矩阵（Skill Suite）**。每个技能都可以独立安装和使用，也可以通过 `trading-sop` 组合成完整的投研决策流水线。为了获得完整的投研决策流水线和可视化看板体验，**强烈建议将本仓库内的所有技能全部安装并配合使用**。
 
 ---
 
@@ -14,7 +14,7 @@
 |:---|:---|:---|
 | **🗂️ SOP 总编排** | [`trading-sop`](trading-sop/SKILL.md) | 所有投研与决策技能的入口调度层。识别用户意图（盘前/盘中/盘后/个股深研/首板隔夜），路由至对应 SOP 链，编排调用现有技能，汇总输出最终可操作建议。是日常交易流程的统一起点。 |
 | **并行流水线** | [`ticker-pipeline`](ticker-pipeline/SKILL.md) | 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。各专员 Prompt 独立存放于 `agents/`，底层数据直接调用 `market` 技能，数据缺失时严格终止阻断。 |
-| **底层数据** | [`market`](market/SKILL.md) | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜与财务数据。优先使用问财，AKShare 仅作 A 股兜底。 |
+| **底层数据** | [`market`](market/SKILL.md) | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜、财务数据与核心商品期货行情。股票数据优先使用问财，AKShare 仅作 A 股兜底；商品行情通过 AkShare/Sina 获取。 |
 | **步骤 1：事实** | [`market-intel`](market-intel/SKILL.md) | 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、板块资金流向及盘中大单，输出客观《市场情报快报》。只报事实，不给建议。 |
 | **步骤 2：研报** | [`asset-analysis`](asset-analysis/SKILL.md) | 标的量化投研 SOP（支持 A/港/美）。提取基本面真实 EPS，提供 PE/PEG/PB-ROE/PS/DCF 多模型目标市值测算及四维技术量化解析。 |
 | **步骤 3：门禁** | [`risk-guard`](risk-guard/SKILL.md) | 量化信号校验与风控门禁 SOP。结合大势乘数校准自洽性，计算全仓与单标的仓位上限、动态止损线，行使**一票否决权（Veto Authority）**。 |
@@ -39,7 +39,10 @@ clawhub install @fize/trading-sop @fize/market @fize/ticker-pipeline @fize/asset
 clawhub install @fize/trading-sop        # SOP 总调度入口与投研看板
 clawhub install @fize/market             # A 股/港美股行情与财务数据底座
 clawhub install @fize/sim-trade          # A 股确定性模拟交易引擎
+
 ```
+
+版本规则与 ClawHub 发布方式见 [VERSIONING.md](VERSIONING.md)。当前功能增强版本为 `1.1.0`；只有 Skill 根本性重构才进入 `2.0.0`。
 
 ### 方式二：通过 Git 源码加载
 
@@ -53,7 +56,7 @@ git clone https://github.com/Fize/mmtickerlab.git
 
 ## 投研与交易工作流（Pipeline）
 
-日常使用以 `trading-sop` 为统一入口，根据意图自动路由至对应链路；各技能亦可独立按需触发：
+日常使用可将 `trading-sop` 作为统一入口，根据意图自动路由至对应链路；各个技能也可以脱离总编排，按自身入口独立运行。独立运行时仍需满足该技能定义的数据完整性、日期和时段约束：
 
 ```mermaid
 flowchart TD
@@ -91,6 +94,16 @@ python3 trading-sop/scripts/server.py
 
 # 浏览器访问：http://127.0.0.1:19876
 ```
+
+## 商品市场数据 (Commodities)
+
+`market` 技能提供采集时点的核心商品期货行情，覆盖贵金属、有色金属、黑色、能源、农业和新能源材料，并同时包含 COMEX 黄金/白银、WTI 和布伦特原油等外盘品种：
+
+```bash
+market/.venv/bin/python market/scripts/market_data.py commodities --date YYYYMMDD
+```
+
+输出会保留品种、价格、涨跌幅、计价单位、行情时间和 `intraday` 状态。该数据来自 [AkShare](https://github.com/akfamily/akshare) 对[新浪财经期货接口](https://finance.sina.com.cn/money/future/hf.html)的封装，必须在新浪域名可访问时运行；命令会在核心品种缺失或字段无法核验时阻断。实时商品接口不提供五日涨跌，稀土暂未纳入期货品种，报告不得用现货价格替代期货价格。
 
 ---
 

@@ -1,0 +1,23 @@
+{
+  "project": {
+    "version": "1.1.0",
+    "tag": "v1.1.0"
+  },
+  "policy": {
+    "patch": "仅修复 bug、校验错误、兼容性问题或文档错误，不改变能力和输出契约",
+    "minor": "增加向后兼容的功能或数据模块",
+    "major": "Skill 根本性重构，或核心输入、输出、调用协议不再兼容"
+  },
+  "skills": {
+    "market": {"version": "1.1.0", "slug": "@fize/market"},
+    "market-intel": {"version": "1.1.0", "slug": "@fize/market-intel"},
+    "plan-review": {"version": "1.1.0", "slug": "@fize/plan-review"},
+    "risk-guard": {"version": "1.1.0", "slug": "@fize/risk-guard"},
+    "industry-research": {"version": "1.1.0", "slug": "@fize/industry-research"},
+    "asset-analysis": {"version": "1.1.0", "slug": "@fize/asset-analysis"},
+    "first-board-overnight": {"version": "1.1.0", "slug": "@fize/first-board-overnight"},
+    "ticker-pipeline": {"version": "1.1.0", "slug": "@fize/ticker-pipeline"},
+    "trading-sop": {"version": "1.1.0", "slug": "@fize/trading-sop"},
+    "sim-trade": {"version": "1.0.0", "slug": "@fize/sim-trade"}
+  }
+}
