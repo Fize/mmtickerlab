@@ -133,45 +133,13 @@ class MultiMarketSymbolTests(unittest.TestCase):
         self.assertEqual(report_data.exchange_for("AAPL"), "us")
 
 
-class IwencaiQueryGenerationTests(unittest.TestCase):
-    def test_hk_and_us_query_generation(self) -> None:
-        from providers.iwencai import _query
-        # HK Quote
-        q_hk, _ = _query("stock_quote", (), {"symbol": "00700", "market": "hk"})
-        self.assertIn("港股 股票代码=00700 实时行情", q_hk)
+class OverseasProviderTests(unittest.TestCase):
+    def test_overseas_quote_runs_successfully(self) -> None:
+        result_hk = report_data.run_with_provider("quote", lambda: {"ok": True}, target_code="00700")
+        self.assertEqual(result_hk, {"ok": True})
 
-        # US Quote
-        q_us, _ = _query("stock_quote", (), {"symbol": "AAPL", "market": "us"})
-        self.assertIn("美股 股票代码=AAPL 实时行情", q_us)
-
-        # A-share Quote
-        q_cn, _ = _query("stock_quote", (), {"symbol": "600519", "market": "cn"})
-        self.assertIn("A股 股票代码=600519 实时行情", q_cn)
-
-        # HK K-line
-        q_hk_k, _ = _query("stock_zh_a_hist", (), {"symbol": "00700", "start_date": "20260101", "end_date": "20260110", "market": "hk"})
-        self.assertIn("港股 股票代码=00700 日期在", q_hk_k)
-
-        # US K-line
-        q_us_k, _ = _query("stock_zh_a_hist", (), {"symbol": "AAPL", "start_date": "20260101", "end_date": "20260110", "market": "us"})
-        self.assertIn("美股 股票代码=AAPL 日期在", q_us_k)
-
-
-class OverseasFallbackProhibitionTests(unittest.TestCase):
-    def test_overseas_quote_raises_without_key_and_never_falls_back(self) -> None:
-        import os
-        old_key = os.environ.pop("IWENCAI_API_KEY", None)
-        try:
-            with self.assertRaises(report_data.DataError) as ctx:
-                report_data.run_with_provider("quote", lambda: None, target_code="00700")
-            self.assertIn("不支持通过 AKShare 兜底", str(ctx.exception))
-
-            with self.assertRaises(report_data.DataError) as ctx:
-                report_data.run_with_provider("quote", lambda: None, target_code="AAPL")
-            self.assertIn("不支持通过 AKShare 兜底", str(ctx.exception))
-        finally:
-            if old_key is not None:
-                os.environ["IWENCAI_API_KEY"] = old_key
+        result_us = report_data.run_with_provider("quote", lambda: {"ok": True}, target_code="AAPL")
+        self.assertEqual(result_us, {"ok": True})
 
     def test_overseas_ashare_only_datasets_blocked(self) -> None:
         today = date(2026, 8, 12)

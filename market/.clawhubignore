@@ -1,8 +1,8 @@
-data/market_raw.db
-data/*.db
+data/
 *.db
 *.db-journal
 *.db-wal
 __pycache__/
 *.pyc
 .venv/
+tests/

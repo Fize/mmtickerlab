@@ -14,7 +14,7 @@
 |:---|:---|:---|
 | **🗂️ SOP 总编排** | [`trading-sop`](trading-sop/SKILL.md) | 所有投研与决策技能的入口调度层。识别用户意图（盘前/盘中/盘后/个股深研/首板隔夜），路由至对应 SOP 链，编排调用现有技能，汇总输出最终可操作建议。是日常交易流程的统一起点。 |
 | **并行流水线** | [`ticker-pipeline`](ticker-pipeline/SKILL.md) | 多 Agent 并行投研与风控决策流水线。输入标的代码与日期，并发调度多个专业 Subagent 全面透视基本面 EPS 与多模型市值、筹码资金与机构热度、全网消息舆情，结合大势环境进行量化风控核验（一票否决门禁），最终交付综合决策研报。各专员 Prompt 独立存放于 `agents/`，底层数据直接调用 `market` 技能，数据缺失时严格终止阻断。 |
-| **底层数据** | [`market`](market/SKILL.md) | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜、财务数据与核心商品期货行情。股票数据优先使用问财，AKShare 仅作 A 股兜底；商品行情通过 AkShare/Sina 获取。 |
+| **底层数据** | [`market`](market/SKILL.md) | A股/港美股行情、K线、20+ 项确定性技术指标、资金流、涨跌停、龙虎榜、财务数据与核心商品期货行情。海外标的与跨市场数据由 yfinance + 新浪极速直连源供给，A 股特色数据由 AKShare 供给。 |
 | **步骤 1：事实** | [`market-intel`](market-intel/SKILL.md) | 市场情报与资讯扫描 SOP。覆盖宏观政策、隔夜外盘、板块资金流向及盘中大单，输出客观《市场情报快报》。只报事实，不给建议。 |
 | **步骤 2：研报** | [`asset-analysis`](asset-analysis/SKILL.md) | 标的量化投研 SOP（支持 A/港/美）。提取基本面真实 EPS，提供 PE/PEG/PB-ROE/PS/DCF 多模型目标市值测算及四维技术量化解析。 |
 | **步骤 3：门禁** | [`risk-guard`](risk-guard/SKILL.md) | 量化信号校验与风控门禁 SOP。结合大势乘数校准自洽性，计算全仓与单标的仓位上限、动态止损线，行使**一票否决权（Veto Authority）**。 |
@@ -42,7 +42,7 @@ clawhub install @fize/sim-trade          # A 股确定性模拟交易引擎
 
 ```
 
-版本规则与 ClawHub 发布方式见 [VERSIONING.md](VERSIONING.md)。当前功能增强版本为 `1.1.0`；只有 Skill 根本性重构才进入 `2.0.0`。
+版本规则与 ClawHub 发布方式见 [VERSIONING.md](VERSIONING.md)。当前版本为 `1.1.1`；只有 Skill 根本性重构才进入 `2.0.0`。
 
 ### 方式二：通过 Git 源码加载
 
@@ -112,8 +112,9 @@ market/.venv/bin/python market/scripts/market_data.py commodities --date YYYYMMD
 1. **数据确定性与完整性保障（Data Integrity & Determinism）**：
    - 坚持数据真实性与可复现性，量化指标与财务估值严格基于真实行情与财报基数；
    - 具备多级数据校验与自动兜底机制，关键数据缺失时触发 Fail-Fast 安全阻断，确保投研分析与交易回测的严谨性与审计合规。
-2. **AKShare 仅限 A 股兜底**：
-   - 港美股标的数据严格经由同花顺问财获取；若未配置问财 API Key 或接口异常，立即安全阻断，不跨市场兜底。
+2. **多市场数据分工与高可用（Multi-Market Data Architecture）**：
+   - 港美股标的与隔夜外盘指数由 `yfinance` 作为第一主力供给，并内建新浪极速直连源与 AKShare 历史日 K 毫秒级自动容灾；
+   - A 股特色数据（涨跌停池、连板梯队、龙虎榜、板块资金流等）由加固版 `AKShare` 承载，跨市场标的代码与校验隔离。
 3. **模拟交易（`sim-trade`）A 股专用**：
    - 严格执行沪深京 A 股 6 位代码校验、T+1 交割制度与五档盘口真实撮合，输入港美股代码直接拒单。
 4. **复盘数据不可回填**：

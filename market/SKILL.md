@@ -29,19 +29,15 @@ uv pip install --python market/.venv -r market/requirements.txt
 market/.venv/bin/python market/scripts/market_data.py DATASET --date YYYYMMDD
 ```
 
-### 数据供应商与问财配置
+### 数据供应商分工与架构
 
-行情、指数、K 线、涨跌停、资金流、大单、龙虎榜、主表、快照和交易日历等市场数据优先使用同花顺问财 `query2data`。请求使用 hithink skill 规定的 Header、trace、分页和重试限制，返回结果经过基本代码、日期、数量及 OHLC 校验后才会使用。
+技能采用**双引擎 + 自动容灾**架构稳定覆盖全市场：
 
-使用问财前配置环境变量：
-
-```bash
-export IWENCAI_API_KEY="your-api-key"
-```
-
-API Key 可在 `https://www.iwencai.com/skillhub` 登录后获取。每次命令都会检测变量；未配置时在 stderr 提示配置方法。
-**兜底边界原则**：
-- **A 股市场**：优先使用问财，未配置 Key 或接口失败时自动整批降级到 AKShare 兜底，并在 JSON 标注 `provider_used`、`fallback` 和 `fallback_reason`。
+1. **海外标的与跨市场（港股、美股、隔夜指数）**：
+   - **主要接口**：采用 `yfinance` 作为第一数据源。
+   - **自动容灾**：当遭遇外部频控或网络波动时，自动无缝降级到新浪极速直连源（毫秒级响应）及 AKShare 历史日 K 接口，并在输出中透明标注数据源。
+2. **A 股特色数据集（涨跌停池、连板梯队、龙虎榜、板块资金流、A 股交易日历）**：
+   - **主要接口**：由加固版 `AKShare` 承载，提供完整的涨跌停炸板、连板高度与大单席位数据。
 
 任一命令返回非零状态时，读取错误并停止使用该数据，不把缺失数据解释为空数据。
 
