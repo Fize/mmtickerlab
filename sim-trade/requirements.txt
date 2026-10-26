@@ -2,3 +2,5 @@ akshare==1.18.84
 curl_cffi==0.16.0
 pandas==2.3.3
 requests==2.34.2
+certifi>=2026.10.19
+urllib3>=2.8.0
